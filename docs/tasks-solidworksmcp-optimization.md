@@ -211,12 +211,19 @@ venv/Scripts/python.exe -m py_compile solidworks_mcp/solidworks_api/ring_light.p
 **偏差记录**：①动作 9 实施中 `part._select_plane` 的共享化曾引入语义变化（SelectByID2 兜底），被既有测试拦截 → 按"改实现不改测试"原则以 `use_extension_fallback=False` 保留原语义；②`normalize_path` 第一版实现（最深存在祖先法）被新 junction 测试**当场证伪**（`..` 末段时 `_getfinalpathname` 失败回退折叠）→ 重写为逐组件解析后转绿——TDD 闭环实证；③模板候选为装配体/工程图补了 Program Files 语言兜底（超集扩展，行为只增不减）；④测试期曾把副产物写入项目根（相对路径 save_path），已修复并清理。
 **动作 11 备注**：审查文档 §11.4 P1-4 的"37% 占比"以迁移前统计为准；迁移后 `solidworks_api/` 仅含通用模块。
 
-## 11. 三波剩余待办（需实机 PoC 或远端仓库）
+## 11. 三波剩余待办（2026-08-28 第三批执行后更新）
 
-- 动作 14 CI（GitHub Actions：pytest + coverage≥80 + pip-audit）——需远端仓库
-- 动作 15 COM 调用超时与挂死检测（poisoned executor 快速失败）——需 SW 实机 PoC 模态框场景（P1-1）
-- 动作 16 ring_light 参数化为通用环形阵列工具
-- auto-start 进程探测收紧（会话过滤/启动窗口退避，P1-8）——需实机验证
-- CloseDoc/文档生命周期策略（P2-8）——需实机验证长会话行为
-- P1-7 残余：校验-写盘 TOCTOU 窗口收紧
-- P2-3 收敛 allowed_root 默认边界（现默认含 aicad 等兄弟目录；.mcp.json 已显式化但值仍为宽根）
+**已在本批完成**（用户指令"继续实施剩余待办" + 两项 AskUserQuestion 裁决）：
+- ✅ 动作 15 COM 超时 + poisoned executor（默认关闭，`SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS` 开启；SW_TIMEOUT/SW_EXECUTOR_POISONED 错误码落地）
+- ✅ auto-start 会话过滤（`ProcessIdToSessionId`，P1-8）
+- ✅ TOCTOU 收紧（`ensure_sink_path` 写盘时刻复查，窗口分钟级→微秒级，P1-7 残余）
+- ✅ P2-3 默认 allowed_root 收敛到项目根（显式配置不受影响）
+- ✅ P2-8 → 新增 `solidworks_file_close` 第 23 个工具（用户裁决；显式关闭而非自动关闭）
+- ✅ 动作 16 ring_light 行数通用化（1-64 行自由，默认 9 行产品布局不变；用户裁决本轮实施，见 ADR-0006.6）
+- ✅ 动作 14 CI workflow 文件就绪（`.github/workflows/ci.yml`：pytest + coverage≥80 + pip-audit，windows runner）
+
+**真正剩余（需外部条件）**：
+- CI 生效需远端仓库（git remote + push 后自动激活）
+- COM 超时启用后的实机验证（SW 模态框场景，确认超时值合理）
+- CloseDoc/会话过滤的实机长会话验证
+- 完整"通用环形阵列工具"如需独立立项（ADR-0006.6 边界声明）

@@ -27,6 +27,15 @@
 - **决策**：[security.py](../solidworks_mcp/utils/security.py) 的 `normalize_path` 逐组件解析：每个**存在**的组件经 `realpath`（`_getfinalpathname`，OS 语义）规范化，`..` 只对**已规范化的前缀**做 pop，绝不词法折叠；全部 COM sink（SaveAs3/OpenDoc6/LoadFile4）与派生文件写入改用规范化路径（响应中仍回显调用方原始路径）。
 - **后果**：真实 junction 回归测试（mklink /J 构造）锁定该行为——旧实现在该测试上失败。已知的残余窗口：校验与写盘之间的 TOCTOU（分钟级，需攻击者能在此窗口改写父目录），留待后续收紧；`realpath` 对 UNC/`\\?\` 前缀的极端形态未全覆盖测试。
 
+# ADR-0006：三波收尾五决策（2026-08-28 第二批）
+
+- **6.1 COM 超时采用"可选超时 + poisoned executor 快速失败"**：`run_com(fn, timeout=...)` 超时后不杀 STA 线程（COM 无法安全中断），标记 poisoned，后续调用立即报 `SW_EXECUTOR_POISONED` 并提示重启 server。默认关闭，经 `SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS` 开启——因此无需实机验证即可安全合入；启用后的模态框场景验证仍建议在实机做。同时落地了 design 文档承诺的 `SW_TIMEOUT` 错误码（P2-7 部分）。
+- **6.2 进程探测按会话过滤**：`_same_session` 用 `ProcessIdToSessionId` 过滤快照结果，其他用户会话的 SLDWORKS.exe 不再误判为本机可用实例（P1-8）；无法查询的进程按"非本会话"处理（fail-closed）。
+- **6.3 写盘 sink 时刻包含性复查**：`ensure_sink_path` 在每次 SaveAs3/布局 JSON 写入前重解析+重查包含性，TOCTOU 窗口从"分钟级建模期"收窄到"解析到写盘的微秒级"；残余窗口（sink 解析与 OS 写入之间）为已接受风险（本地单用户威胁模型）。
+- **6.4 默认 allowed_root 收敛到项目根**：无环境变量时不再默认整个父工作区（曾传递包含 aicad/）；显式配置不受影响（P2-3）。注意 `DEFAULT_ALLOWED_ROOT` 仍在 import 期冻结——与入口校验一致，保持同根语义。
+- **6.5 文档生命周期采用显式 close 工具而非自动关闭**：自动关闭会破坏"建件→测量→导出"的有状态工作流；新增 `solidworks_file_close`（DESTRUCTIVE 注解，`save_changes=false` 丢弃未保存修改）让生命周期管理成为显式调用（P2-8，用户裁决）。
+- **6.6 ring_light 行数通用化**：row_counts 放开为 1-64 行（默认仍为已确认的 9 行产品布局，默认行为零变化）；安装孔/线缆盒仍为产品常量——完整"通用环形阵列工具"若未来需要，应以独立工具立项而非继续膨胀 examples（动作 16 本轮范围，用户裁决实施）。
+
 # ADR-0005：能力清单从注册表派生（含遗留待办）
 
 - **状态**：已接受（2026-08-28）
