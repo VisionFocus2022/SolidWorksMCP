@@ -126,6 +126,44 @@ def open_document(
         return error_response(f"Failed to open document: {exc}")
 
 
+def close_document(sw_app: SolidWorksApp, save_changes: bool = False) -> dict:
+    """Close the active document, optionally saving it first.
+
+    Closing without ``save_changes`` discards unsaved edits.
+    """
+    try:
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+
+        title = _model_title(model)
+        if save_changes:
+            errors, warnings = _make_error_variants()
+            saved = bool(model.Save3(swSaveAsOptions_Silent, errors, warnings))
+            if not saved:
+                return error_response(
+                    "SolidWorks rejected saving the document before closing",
+                    code="SW_SAVE_FAILED",
+                )
+
+        closed = sw_app.app.CloseDoc(title)
+        if not closed:
+            return error_response(
+                f"SolidWorks rejected closing document: {title}",
+                code="SW_API_ERROR",
+            )
+
+        return success_response(
+            data={"title": title, "saved": save_changes},
+            message=f"Closed document: {title}",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to close document")
+        return error_response(f"Failed to close document: {exc}")
+
+
 def import_step(
     sw_app: SolidWorksApp,
     file_path: str,

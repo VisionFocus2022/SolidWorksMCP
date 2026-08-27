@@ -28,6 +28,7 @@ from solidworks_mcp.solidworks_api.features import (
     set_feature_suppression,
 )
 from solidworks_mcp.solidworks_api.file_io import (
+    close_document,
     export_step,
     export_stl,
     import_step,
@@ -482,6 +483,18 @@ def solidworks_file_open(
 ) -> ToolResult:
     """Open an existing document under allowed_root."""
     return _call_connected(lambda sw: open_document(sw, file_path), launch_if_needed)
+
+
+@mcp.tool(title="Close document", annotations=DESTRUCTIVE, structured_output=True)
+def solidworks_file_close(
+    save_changes: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Close the active document; unsaved edits are discarded unless save_changes=true."""
+    return _call_connected(
+        lambda sw: close_document(sw, save_changes),
+        launch_if_needed,
+    )
 
 
 @mcp.tool(title="Import STEP", annotations=STATE_CHANGE, structured_output=True)

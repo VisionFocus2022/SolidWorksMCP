@@ -101,6 +101,7 @@ class TestServerToolWrappers(unittest.TestCase):
             ),
             (server.solidworks_part_get_mass_properties, {}),
             (server.solidworks_file_open, {"file_path": "part.sldprt"}),
+            (server.solidworks_file_close, {}),
             (server.solidworks_file_import_step, {"file_path": "part.step"}),
             (server.solidworks_file_export_step, {"file_path": "part.step"}),
             (server.solidworks_file_export_stl, {"file_path": "part.stl"}),
@@ -140,7 +141,7 @@ class TestServerToolWrappers(unittest.TestCase):
         result = server.solidworks_design_capabilities()
 
         self.assertTrue(result["success"])
-        self.assertEqual(len(result["data"]["tools"]), 22)
+        self.assertEqual(len(result["data"]["tools"]), 23)
 
     def test_resources_return_json_payloads(self):
         status = json.loads(server.solidworks_status_resource())
@@ -153,7 +154,7 @@ class TestServerToolWrappers(unittest.TestCase):
         self.assertTrue(active["success"])
 
         capabilities = json.loads(server.solidworks_capabilities_resource())
-        self.assertEqual(len(capabilities["tools"]), 22)
+        self.assertEqual(len(capabilities["tools"]), 23)
 
 
 class TestComTimeout(unittest.TestCase):

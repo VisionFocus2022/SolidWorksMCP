@@ -10,6 +10,7 @@ from solidworks_mcp.solidworks_api.file_io import (
     FILE_LOAD_ERROR_NON_SW,
     _format_load_error,
     _guess_document_type,
+    close_document,
     export_step,
     export_stl,
     import_step,
@@ -67,6 +68,42 @@ class TestOpenDocument(unittest.TestCase):
     @patch("solidworks_mcp.solidworks_api.file_io.validate_path", return_value=(False, "unsafe"))
     def test_open_rejects_invalid_path(self, _validate):
         self.assertEqual(open_document(Mock(), "bad.sldprt")["message"], "unsafe")
+
+
+class TestCloseDocument(unittest.TestCase):
+    def test_close_without_save_skips_save_and_reports_title(self):
+        model = SimpleNamespace(GetTitle=lambda: "Part1")
+        sw = Mock()
+        sw.get_active_document.return_value = model
+        sw.app.CloseDoc.return_value = True
+
+        result = close_document(sw)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"], {"title": "Part1", "saved": False})
+        sw.app.CloseDoc.assert_called_once_with("Part1")
+
+    def test_close_with_save_reports_saved_and_save_rejection(self):
+        model = SimpleNamespace(GetTitle=lambda: "Part1", Save3=lambda *a: True)
+        sw = Mock()
+        sw.get_active_document.return_value = model
+        sw.app.CloseDoc.return_value = True
+        self.assertTrue(close_document(sw, save_changes=True)["data"]["saved"])
+
+        model.Save3 = lambda *a: False
+        result = close_document(sw, save_changes=True)
+        self.assertEqual(result["error"]["code"], "SW_SAVE_FAILED")
+        sw.app.CloseDoc.assert_called_once()  # only from the first call
+
+    def test_close_handles_missing_document_and_close_rejection(self):
+        sw = Mock()
+        sw.get_active_document.return_value = None
+        self.assertFalse(close_document(sw)["success"])
+
+        model = SimpleNamespace(GetTitle=lambda: "P", Save3=lambda *a: True)
+        sw.get_active_document.return_value = model
+        sw.app.CloseDoc.return_value = False
+        self.assertEqual(close_document(sw)["error"]["code"], "SW_API_ERROR")
 
 
 class TestImportExport(unittest.TestCase):

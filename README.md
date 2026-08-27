@@ -6,7 +6,7 @@
 
 ## 主要能力
 
-- 使用官方 Python MCP SDK，通过 stdio 提供 22 个 tools、3 个 resources、1 个 prompt
+- 使用官方 Python MCP SDK，通过 stdio 提供 23 个 tools、3 个 resources、1 个 prompt
 - 连接正在运行的 SolidWorks，或在明确允许时自动启动
 - 新建零件，创建板件、块体、圆柱体和圆孔
 - 生成 9 行球形穹顶环形灯零件（产品专用工具，代码位于 solidworks_mcp/examples/）
@@ -99,7 +99,7 @@ Tools 按领域分为：
 - 连接：solidworks_connect、solidworks_get_active_document
 - 设计：solidworks_design_capabilities、solidworks_design_execute_plan
 - 零件：solidworks_part_new、solidworks_part_create_plate、solidworks_part_create_box、solidworks_part_create_cylinder、solidworks_part_cut_round_hole、solidworks_part_create_ring_light、solidworks_part_create_ring_light_v3、solidworks_part_get_mass_properties
-- 文件：solidworks_file_open、solidworks_file_import_step、solidworks_file_export_step、solidworks_file_export_stl
+- 文件：solidworks_file_open、solidworks_file_close、solidworks_file_import_step、solidworks_file_export_step、solidworks_file_export_stl
 - 特征：solidworks_features_list、solidworks_feature_rename、solidworks_feature_set_suppression
 - 装配：solidworks_assembly_add_component、solidworks_assembly_list_components、solidworks_assembly_add_mate
 
