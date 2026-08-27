@@ -157,6 +157,10 @@ class TestCreateRingLightV3EndToEnd(unittest.TestCase):
         return_value=(True, ""),
     )
     @patch(
+        "solidworks_mcp.examples.ring_light_v3.ensure_sink_path",
+        side_effect=lambda path, allowed_root=None: (True, "", path),
+    )
+    @patch(
         "solidworks_mcp.examples.ring_light_v3.validate_output_file",
         return_value=(True, ""),
     )
@@ -165,7 +169,7 @@ class TestCreateRingLightV3EndToEnd(unittest.TestCase):
         return_value=(True, ""),
     )
     def test_full_build_reports_quadrant_bands_and_layout(
-        self, _path, _output, _confirm
+        self, _path, _output, _sink, _confirm
     ):
         model = FakeV3Model()
         sw = Mock()
@@ -187,6 +191,10 @@ class TestCreateRingLightV3EndToEnd(unittest.TestCase):
         return_value=(True, ""),
     )
     @patch(
+        "solidworks_mcp.examples.ring_light_v3.ensure_sink_path",
+        side_effect=lambda path, allowed_root=None: (True, "", path),
+    )
+    @patch(
         "solidworks_mcp.examples.ring_light_v3.validate_output_file",
         return_value=(True, ""),
     )
@@ -195,7 +203,7 @@ class TestCreateRingLightV3EndToEnd(unittest.TestCase):
         return_value=(True, ""),
     )
     def test_unselectable_front_face_fails_gracefully(
-        self, _path, _output, _confirm
+        self, _path, _output, _sink, _confirm
     ):
         model = FakeV3Model()
         model.Extension.SelectByRay.return_value = False
@@ -212,6 +220,10 @@ class TestCreateRingLightV3EndToEnd(unittest.TestCase):
         return_value=(True, ""),
     )
     @patch(
+        "solidworks_mcp.examples.ring_light_v3.ensure_sink_path",
+        side_effect=lambda path, allowed_root=None: (True, "", path),
+    )
+    @patch(
         "solidworks_mcp.examples.ring_light_v3.validate_output_file",
         return_value=(True, ""),
     )
@@ -220,7 +232,7 @@ class TestCreateRingLightV3EndToEnd(unittest.TestCase):
         return_value=(True, ""),
     )
     def test_unopenable_source_reports_import_failure(
-        self, _path, _output, _confirm
+        self, _path, _output, _sink, _confirm
     ):
         sw = Mock()
         sw.app.OpenDoc6.return_value = None
@@ -236,6 +248,10 @@ class TestCreateRingLightV3EndToEnd(unittest.TestCase):
         return_value=(True, ""),
     )
     @patch(
+        "solidworks_mcp.examples.ring_light_v3.ensure_sink_path",
+        side_effect=lambda path, allowed_root=None: (True, "", path),
+    )
+    @patch(
         "solidworks_mcp.examples.ring_light_v3.validate_output_file",
         return_value=(True, ""),
     )
@@ -243,7 +259,7 @@ class TestCreateRingLightV3EndToEnd(unittest.TestCase):
         "solidworks_mcp.examples.ring_light_v3.validate_path",
         return_value=(True, ""),
     )
-    def test_step_source_falls_back_to_loadfile4(self, _path, _output, _confirm):
+    def test_step_source_falls_back_to_loadfile4(self, _path, _output, _sink, _confirm):
         model = FakeV3Model()
         sw = Mock()
         sw.app.OpenDoc6.return_value = None

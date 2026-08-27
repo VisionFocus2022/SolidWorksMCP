@@ -21,7 +21,7 @@ from solidworks_mcp.solidworks_api.part import create_box, create_cylinder
 from solidworks_mcp.solidworks_api.sketch import cut_feature
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
-from solidworks_mcp.utils.security import normalize_path, validate_output_file
+from solidworks_mcp.utils.security import ensure_sink_path, validate_output_file
 from solidworks_mcp.utils.templates import get_part_template
 from solidworks_mcp.utils.validation import finite_number, parse_bool, positive_number
 
@@ -59,9 +59,10 @@ def _save_active_model(
     if not allowed:
         return error_response(msg, code="INVALID_OUTPUT_PATH")
 
-    save_result = model.SaveAs3(
-        normalize_path(save_path), 0, swSaveAsOptions_Silent
-    )
+    ok, message, sink_path = ensure_sink_path(save_path)
+    if not ok:
+        return error_response(message, code="INVALID_OUTPUT_PATH")
+    save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
     if save_result != swFileSaveErrorNone:
         return error_response(f"SaveAs3 failed with code {save_result}")
     result["saved_to"] = save_path

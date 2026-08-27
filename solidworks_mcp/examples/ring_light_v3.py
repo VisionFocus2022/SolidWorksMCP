@@ -22,6 +22,7 @@ from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value, make_error_variants
 from solidworks_mcp.utils.security import (
     check_overwrite_confirm,
+    ensure_sink_path,
     normalize_path,
     validate_output_file,
     validate_path,
@@ -499,9 +500,10 @@ def create_ring_light_v3(
         model, open_errors, open_warnings = _open_source_part(sw_app, source_path)
         if model is None:
             return error_response("Could not open STEP-derived source part", code="SW_IMPORT_FAILED")
-        save_result = model.SaveAs3(
-            normalize_path(save_path), 0, swSaveAsOptions_Silent
-        )
+        ok, message, sink_path = ensure_sink_path(save_path)
+        if not ok:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
+        save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
         if save_result != 0:
             return error_response(f"SaveAs3 failed with code {save_result}", code="SW_SAVE_FAILED")
 
@@ -517,7 +519,10 @@ def create_ring_light_v3(
         if not saved:
             return error_response("SolidWorks rejected final v3 save", code="SW_SAVE_FAILED")
 
-        Path(layout_path).write_text(json.dumps(layout, ensure_ascii=False, indent=2), encoding="utf-8")
+        ok, message, sink_layout = ensure_sink_path(layout_path)
+        if not ok:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
+        Path(sink_layout).write_text(json.dumps(layout, ensure_ascii=False, indent=2), encoding="utf-8")
         raised_count = int(layout["row_counts"][0])
         cut_count = int(layout["total_led_count"]) - raised_count
         return success_response(

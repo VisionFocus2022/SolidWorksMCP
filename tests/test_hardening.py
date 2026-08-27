@@ -17,7 +17,11 @@ from unittest.mock import Mock, patch
 
 from solidworks_mcp.examples import ring_light, ring_light_v3
 from solidworks_mcp.solidworks_api.design import _save_active_model
-from solidworks_mcp.utils.security import is_path_allowed, normalize_path
+from solidworks_mcp.utils.security import (
+    ensure_sink_path,
+    is_path_allowed,
+    normalize_path,
+)
 from solidworks_mcp.utils.templates import _programdata_candidates
 
 
@@ -105,6 +109,60 @@ class TestSinksUseNormalizedPaths(unittest.TestCase):
 
         model.SaveAs3.assert_called_once_with(normalize_path("part.sldprt"), 0, 1)
         self.assertEqual(result["saved_to"], "part.sldprt")
+
+    def test_sink_recheck_rejects_junction_escape(self):
+        with tempfile.TemporaryDirectory() as base:
+            root = os.path.join(base, "root")
+            outside = os.path.join(base, "outside")
+            os.makedirs(root)
+            os.makedirs(outside)
+            link = os.path.join(root, "link")
+            created = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", link, outside],
+                capture_output=True,
+                text=True,
+            )
+            if created.returncode != 0:
+                self.skipTest("junction creation not permitted on this host")
+
+            ok, message, _normalized = ensure_sink_path(
+                os.path.join(root, "link", "..", "escape.sldprt"),
+                allowed_root=root,
+            )
+
+            self.assertFalse(ok)
+            self.assertIn("save time", message)
+
+    def test_sink_recheck_passes_normal_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, "part.sldprt")
+
+            ok, message, normalized = ensure_sink_path(
+                target, allowed_root=tmp
+            )
+
+            self.assertTrue(ok)
+            self.assertEqual(message, "")
+            self.assertEqual(normalized, normalize_path(target))
+
+
+class TestSessionFilter(unittest.TestCase):
+    def test_own_process_matches_current_session(self):
+        from solidworks_mcp.solidworks_api.app import _same_session
+        import os
+
+        self.assertTrue(_same_session(os.getpid()))
+
+    def test_unqueryable_process_is_treated_as_other_session(self):
+        from types import SimpleNamespace
+
+        from solidworks_mcp.solidworks_api.app import _same_session
+
+        fake = SimpleNamespace()
+        fake.GetCurrentProcessId = lambda: 4242
+        fake.ProcessIdToSessionId = lambda pid, out: False
+
+        self.assertFalse(_same_session(9999, kernel32=fake))
 
 
 class TestDerivedFileConfirmation(unittest.TestCase):

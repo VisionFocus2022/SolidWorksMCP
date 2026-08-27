@@ -18,6 +18,7 @@ from solidworks_mcp.solidworks_api.constants import (
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value, make_error_variants
 from solidworks_mcp.utils.security import (
+    ensure_sink_path,
     normalize_path,
     validate_output_file,
     validate_path,
@@ -185,9 +186,10 @@ def export_step(
         if model is None:
             return error_response("No active document to export")
 
-        result = model.SaveAs3(
-            normalize_path(file_path), 0, swSaveAsOptions_Silent
-        )
+        ok, message, sink_path = ensure_sink_path(file_path)
+        if not ok:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
+        result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
         if result != swFileSaveErrorNone:
             return error_response(f"Export failed with code {result}")
 
@@ -217,9 +219,10 @@ def export_stl(
         if model is None:
             return error_response("No active document to export")
 
-        result = model.SaveAs3(
-            normalize_path(file_path), 0, swSaveAsOptions_Silent
-        )
+        ok, message, sink_path = ensure_sink_path(file_path)
+        if not ok:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
+        result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
         if result != swFileSaveErrorNone:
             return error_response(f"STL export failed with code {result}")
 

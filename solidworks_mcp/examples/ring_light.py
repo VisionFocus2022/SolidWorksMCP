@@ -28,6 +28,7 @@ from solidworks_mcp.solidworks_api.sketch import cut_feature, extrude_boss
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.security import (
     check_overwrite_confirm,
+    ensure_sink_path,
     normalize_path,
     validate_output_file,
 )
@@ -611,9 +612,10 @@ def _save_native_fallback(sw_app: SolidWorksApp, layout: dict, save_path: str) -
         model.ForceRebuild3(False)
     except Exception:
         pass
-    save_result = model.SaveAs3(
-        normalize_path(save_path), 0, swSaveAsOptions_Silent
-    )
+    ok, message, sink_path = ensure_sink_path(save_path)
+    if not ok:
+        return error_response(message, code="INVALID_OUTPUT_PATH")
+    save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
     if save_result != swFileSaveErrorNone:
         return error_response(f"SaveAs3 failed with code {save_result}", code="SW_SAVE_FAILED")
     led_total = int(layout["total_led_count"])
@@ -681,6 +683,9 @@ def create_ring_light(
         for derived in (stl_path, metadata_path):
             allowed, message = check_overwrite_confirm(derived, overwrite_confirm)
             if not allowed:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+            ok, message, derived = ensure_sink_path(derived)
+            if not ok:
                 return error_response(message, code="INVALID_OUTPUT_PATH")
         write_ring_light_stl(layout, stl_path)
         with open(metadata_path, "w", encoding="utf-8") as handle:

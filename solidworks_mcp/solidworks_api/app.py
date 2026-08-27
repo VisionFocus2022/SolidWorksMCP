@@ -15,8 +15,36 @@ from solidworks_mcp.utils.com import call_or_value
 logger = logging.getLogger(__name__)
 
 
+def _same_session(pid: int, kernel32: Any = None) -> bool:
+    """Return True when ``pid`` belongs to the current Windows session.
+
+    The Toolhelp32 snapshot lists processes from every session, so a
+    SLDWORKS.exe started by another user (fast user switching / RDP) must
+    not be mistaken for a SolidWorks instance we could attach to.
+    """
+    dll = kernel32 if kernel32 is not None else ctypes.WinDLL(
+        "kernel32", use_last_error=True
+    )
+    dll.GetCurrentProcessId.argtypes = []
+    dll.GetCurrentProcessId.restype = wintypes.DWORD
+    dll.ProcessIdToSessionId.argtypes = [
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    dll.ProcessIdToSessionId.restype = wintypes.BOOL
+    own_session = wintypes.DWORD(0)
+    session = wintypes.DWORD(0)
+    if not dll.ProcessIdToSessionId(
+        dll.GetCurrentProcessId(), ctypes.byref(own_session)
+    ):
+        return False
+    if not dll.ProcessIdToSessionId(pid, ctypes.byref(session)):
+        return False
+    return session.value == own_session.value
+
+
 def _is_solidworks_process_running() -> bool:
-    """Return True when SLDWORKS.exe is already running for this Windows session."""
+    """Return True when SLDWORKS.exe runs in this Windows session."""
     max_path = 260
     snapshot_process = 0x00000002
     invalid_handle_value = ctypes.c_void_p(-1).value
@@ -54,7 +82,9 @@ def _is_solidworks_process_running() -> bool:
         if not kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
             return False
         while True:
-            if entry.szExeFile.lower() == "sldworks.exe":
+            if entry.szExeFile.lower() == "sldworks.exe" and _same_session(
+                entry.th32ProcessID, kernel32
+            ):
                 return True
             if not kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
                 return False

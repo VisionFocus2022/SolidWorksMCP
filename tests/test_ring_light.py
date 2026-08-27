@@ -148,11 +148,15 @@ class TestCreateRingLightEndToEnd(unittest.TestCase):
         return_value=(True, ""),
     )
     @patch(
+        "solidworks_mcp.examples.ring_light.ensure_sink_path",
+        side_effect=lambda path, allowed_root=None: (True, "", path),
+    )
+    @patch(
         "solidworks_mcp.examples.ring_light.validate_output_file",
         return_value=(True, ""),
     )
     def test_native_path_writes_stl_and_layout_side_artifacts(
-        self, _validate, _confirm
+        self, _validate, _sink, _confirm
     ):
         from tests.test_hardening import FakeRingLightModel
 
@@ -181,10 +185,14 @@ class TestCreateRingLightEndToEnd(unittest.TestCase):
         return_value=(True, ""),
     )
     @patch(
+        "solidworks_mcp.examples.ring_light.ensure_sink_path",
+        side_effect=lambda path, allowed_root=None: (True, "", path),
+    )
+    @patch(
         "solidworks_mcp.examples.ring_light.validate_output_file",
         return_value=(True, ""),
     )
-    def test_unselectable_planes_fail_gracefully(self, _validate, _confirm):
+    def test_unselectable_planes_fail_gracefully(self, _validate, _sink, _confirm):
         from tests.test_hardening import FakeRingLightModel
 
         model = FakeRingLightModel()
@@ -209,10 +217,14 @@ class TestCreateRingLightEndToEnd(unittest.TestCase):
         return_value=(True, ""),
     )
     @patch(
+        "solidworks_mcp.examples.ring_light.ensure_sink_path",
+        side_effect=lambda path, allowed_root=None: (True, "", path),
+    )
+    @patch(
         "solidworks_mcp.examples.ring_light.validate_output_file",
         return_value=(True, ""),
     )
-    def test_save_failure_reports_solidworks_error(self, _validate, _confirm):
+    def test_save_failure_reports_solidworks_error(self, _validate, _sink, _confirm):
         from tests.test_hardening import FakeRingLightModel
 
         model = FakeRingLightModel()

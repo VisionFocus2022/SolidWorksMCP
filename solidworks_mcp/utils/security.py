@@ -69,6 +69,28 @@ def is_path_allowed(
     return os.path.normcase(common) == os.path.normcase(root)
 
 
+def ensure_sink_path(
+    path: str,
+    allowed_root: Optional[str] = None,
+) -> tuple[bool, str, str]:
+    """Re-check containment at the moment of writing (TOCTOU narrowing).
+
+    Validation happens minutes before long modeling calls; the filesystem
+    can change in between. This re-resolves the path and re-checks the
+    allowed root right before the sink. Returns ``(ok, message, normalized)``
+    where ``normalized`` is the path the caller must hand to SolidWorks.
+    """
+    normalized = normalize_path(path)
+    if not is_path_allowed(normalized, allowed_root or DEFAULT_ALLOWED_ROOT):
+        return (
+            False,
+            f"Path '{path}' resolves outside the allowed root at save time. "
+            "The filesystem may have changed since validation; aborting.",
+            normalized,
+        )
+    return True, "", normalized
+
+
 def validate_path(
     path: str,
     allowed_root: Optional[str] = None,

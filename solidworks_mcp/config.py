@@ -8,8 +8,13 @@ from pathlib import Path
 
 
 def _workspace_root() -> str:
-    """Return the parent workspace that contains the SolidWorksMCP project."""
-    return str(Path(__file__).resolve().parents[2])
+    """Default allowed root: the project directory itself.
+
+    Narrowed from the parent workspace (2026-08-28, review P2-3) so an
+    unconfigured server cannot touch sibling projects such as aicad/. Set
+    SOLIDWORKS_MCP_ALLOWED_ROOT explicitly to widen it.
+    """
+    return str(_project_root())
 
 
 def _project_root() -> Path:
