@@ -23,9 +23,9 @@
 
 | 波次 | 主题 | 解决缺点 | 风险 | 状态 |
 |------|------|----------|------|------|
-| 🚑 第一波 止血 | 恢复可运行/可验证/文档对齐，不改行为 | P0-1(缓解)、P0-2、P1-2、P1-3(部分)、P2-1、P2-2、P2-4(部分) | 低 | ✅ 本次执行 |
-| 🔧 第二波 可测化+解耦 | git 落地、消重复、拆层、补测试 | P0-1(根治)、P1-4、P1-5、P1-2(根治)、P2-5 | 中 | ⏸ 待用户裁决 |
-| 🚀 第三波 现代化 | COM 超时、ring_light 通用化、CI | P1-1、P1-6、P2-3、P2-6 | 高（需 PoC） | ⏸ 待用户裁决 |
+| 🚑 第一波 止血 | 恢复可运行/可验证/文档对齐，不改行为 | P0-1(缓解)、P0-2、P1-2、P1-3(部分)、P2-1、P2-2、P2-4(部分) | 低 | ✅ 2026-08-28 |
+| 🔧 第二波 可测化+解耦 | git 落地、消重复、拆层、补测试 | P0-1(根治)、P1-4、P1-5、P1-2(根治)、P2-5 | 中 | ✅ 2026-08-28（用户裁决"继续实施"） |
+| 🚀 第三波 现代化 | COM 超时、ring_light 通用化、CI | P1-1、P1-6、P2-3、P2-6 | 高（需 PoC） | ◐ 部分提前完成（P1-7/P1-9/动作17/18），其余待办 |
 
 ---
 
@@ -89,7 +89,7 @@ venv/Scripts/python.exe -m py_compile solidworks_mcp/solidworks_api/ring_light.p
 
 ---
 
-## 4. 第二波：可测化 + 解耦（⏸ 待用户裁决后执行）
+## 4. 第二波：可测化 + 解耦（✅ 2026-08-28 执行完毕，逐条验收见 §10）
 
 ### 动作 8：git 版本管理落地（P0-1 根治）【本波第一优先】
 - **背景**: 项目根无 .git，父目录 .git 为空目录，git 命令报 not a repository（已验证）。两次搬迁历史证明该项目会被移动，无版本管理 = 每次优化都裸奔。
@@ -193,3 +193,30 @@ venv/Scripts/python.exe -m py_compile solidworks_mcp/solidworks_api/ring_light.p
 
 **总验证**：122 passed / 0 failed / 0 skipped / 22 subtests；coverage 63%（<80%，属二波动作 12 范围，未解决非未申报）；py_compile 0 error；pip-audit 0 CVE。
 **偏差记录**：①原计划期望覆盖率小幅提升，实测持平 63%（死代码行多为未覆盖行，删除同时缩小分子分母）——已如实回填；②动作 5 的 venv 重建使用 `--clear` 原地重建（旧 venv 已损坏无保留价值，142MB→重建）。
+
+## 10. 第二波执行记录（✅ 2026-08-28 回填）
+
+**授权留痕**：用户指令"根据推荐继续实施"（S1，含上轮报告列明的 #1 推荐 git init + 首提交）；ring_light 处置经 AskUserQuestion 显式裁决为"子包隔离+保留工具"。提交序列：
+
+| 提交 | 内容 | 对应动作 |
+|------|------|----------|
+| `e6916e1` | git 基线（48 文件，venv/aicad/output/日志/egg-info/备份均被 .gitignore 正确排除） | 动作 8（P0-1 根治） |
+| `c52ace8` | ring_light v1/v3 迁入 `solidworks_mcp/examples/`，22 工具全保留、行为零变化 | 动作 11（用户裁决选项 1） |
+| `047b7ee` | 抽 constants.py / geometry.py / sketch.py / utils.com.make_error_variants 消 10 组重复；`_capabilities()` 改从注册表派生 + 契约测试升级为列表相等 | 动作 9、10 |
+| `1787298` | 逐组件路径解析（junction 回归测试 RED→GREEN）+ 全部 sink 用规范化路径 + 派生文件 overwrite_confirm + 动态 LED 计数 + 模板版本化 | 三波提前项：P1-7、P1-6、P1-9、动作 17/18 |
+| `197c5e7` | 覆盖率 63%→89%（ring_light 原生路径/v3 STEP 回退/进程探测/executor 分支/22 工具包装器/模板 getter 全覆盖）+ 删第二处死代码 `_create_spherical_dome_boss`（~70 行） | 动作 12 |
+| （本提交） | ADR×5、design 文档 as-built 对账附录、README 补充 | 动作 13 |
+
+**验证**：150 passed / 0 failed / 42 subtests；coverage **89% ≥ fail_under=80（项目质量门恢复绿色）**；无 CWD 测试污染（曾发现并修复）。
+**偏差记录**：①动作 9 实施中 `part._select_plane` 的共享化曾引入语义变化（SelectByID2 兜底），被既有测试拦截 → 按"改实现不改测试"原则以 `use_extension_fallback=False` 保留原语义；②`normalize_path` 第一版实现（最深存在祖先法）被新 junction 测试**当场证伪**（`..` 末段时 `_getfinalpathname` 失败回退折叠）→ 重写为逐组件解析后转绿——TDD 闭环实证；③模板候选为装配体/工程图补了 Program Files 语言兜底（超集扩展，行为只增不减）；④测试期曾把副产物写入项目根（相对路径 save_path），已修复并清理。
+**动作 11 备注**：审查文档 §11.4 P1-4 的"37% 占比"以迁移前统计为准；迁移后 `solidworks_api/` 仅含通用模块。
+
+## 11. 三波剩余待办（需实机 PoC 或远端仓库）
+
+- 动作 14 CI（GitHub Actions：pytest + coverage≥80 + pip-audit）——需远端仓库
+- 动作 15 COM 调用超时与挂死检测（poisoned executor 快速失败）——需 SW 实机 PoC 模态框场景（P1-1）
+- 动作 16 ring_light 参数化为通用环形阵列工具
+- auto-start 进程探测收紧（会话过滤/启动窗口退避，P1-8）——需实机验证
+- CloseDoc/文档生命周期策略（P2-8）——需实机验证长会话行为
+- P1-7 残余：校验-写盘 TOCTOU 窗口收紧
+- P2-3 收敛 allowed_root 默认边界（现默认含 aicad 等兄弟目录；.mcp.json 已显式化但值仍为宽根）

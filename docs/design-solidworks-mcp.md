@@ -1,8 +1,10 @@
 # Design：SolidWorks MCP Server
 
-**版本**: 1.0  
-**日期**: 2026-07-17  
-**关联 PRD**: `E:\SolidWorks 2026\SolidWorksMCP\docs\prd-solidworks-mcp.md`
+**版本**: 1.1（as-built 修订）
+**日期**: 2026-07-17（v1.0）｜ 2026-08-28（as-built 附录）
+**关联 PRD**: `docs/prd-solidworks-mcp.md`
+
+> ⚠️ **As-built 说明（2026-08-28）**：本文以下内容为 2026-07-17 的**原始设计**，保留作历史记录。与实现的主要偏差见文末「附录 A：As-built 对账」与 `docs/adr/2026-08-28-architecture-decisions.md`（决策记录）。
 
 ---
 
@@ -282,3 +284,19 @@ class CreateCylinderParams(BaseModel):
 - [✅] 探索门禁已通过
 - [✅] PRD 门禁已通过
 - [ ] Design 门禁待确认
+
+---
+
+## 附录 A：As-built 对账（2026-08-28）
+
+| 原设计 | 实际实现 | 说明 |
+|--------|----------|------|
+| `tools/` 分域工具层（每域一模块） | **未建**——全部 22 个工具集中注册于 `server.py` | 漂移；架构审查列入二三波演进项 |
+| 选型 `fastmcp` 库 | 官方 `mcp` SDK 1.28.x 的 `server.fastmcp.FastMCP` | 2026-07-21 切换，venv 曾残留 fastmcp 3.4.4（已清理） |
+| stdio 传输 | stdio ✓ | 一致 |
+| 工具超时 30s/120s | **未实现**（`run_com` 无超时参数） | ADR-0005 遗留待办（需实机 PoC） |
+| 错误码表（含 TIMEOUT/SW_NOT_RUNNING） | 部分实现：INVALID_PARAMETER/SW_API_ERROR/SW_CONNECTION_FAILED/INVALID_OUTPUT_PATH 等；约半数路径落默认 OPERATION_FAILED | 详见架构审查 P2-7 |
+| 分层 | `solidworks_api/`（通用）+ `utils/` + `examples/`（产品专用，2026-08-28 隔离）| ADR-0003 |
+| `drawing.py` 工程图模块 | 未实现（README 已声明边界） | 一致（明确排除） |
+
+**当前基线**：150 通过 / 0 失败 / 42 子测试；覆盖率 89%（fail_under=80 绿）；git 版本管理已建立（main 分支）。
