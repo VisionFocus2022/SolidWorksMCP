@@ -17,9 +17,38 @@ DEFAULT_ALLOWED_ROOT = os.path.normpath(get_config().allowed_root)
 
 
 def normalize_path(path: str) -> str:
-    """Normalize an absolute path and resolve existing links/junctions."""
-    expanded = os.path.abspath(os.path.expanduser(path))
-    return os.path.normpath(os.path.realpath(expanded))
+    """Normalize an absolute path, resolving links/junctions with OS semantics.
+
+    Resolution is component-wise and never lexically folds ``..`` across a
+    link: each existing component is canonicalized via ``realpath`` (whose
+    ``_getfinalpathname`` resolves junctions the way the file system does),
+    and ``..`` pops the already-canonical prefix. This prevents
+    ``root\\link\\..\\out`` from folding to ``root\\out`` when ``link``
+    actually points outside the root.
+    """
+    expanded = os.path.expanduser(path)
+    if os.path.lexists(expanded):
+        return os.path.normpath(os.path.realpath(expanded))
+    if not os.path.isabs(expanded):
+        expanded = os.getcwd() + os.sep + expanded
+    drive, rest = os.path.splitdrive(expanded)
+    parts: list = []
+    for part in rest.split(os.sep):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+        candidate = drive + os.sep + os.sep.join(parts)
+        if os.path.lexists(candidate):
+            canonical_drive, canonical_rest = os.path.splitdrive(
+                os.path.realpath(candidate)
+            )
+            drive = canonical_drive or drive
+            parts = [p for p in canonical_rest.split(os.sep) if p not in ("", ".")]
+    return os.path.normpath(drive + os.sep + os.sep.join(parts))
 
 
 def is_path_allowed(

@@ -7,6 +7,9 @@ import math
 from pathlib import Path
 from typing import Any, List, Optional, Sequence
 
+import pythoncom
+import win32com.client
+
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
 from solidworks_mcp.solidworks_api.constants import (
     swDocPART,
@@ -17,7 +20,12 @@ from solidworks_mcp.solidworks_api.geometry import linspace, mm_to_m
 from solidworks_mcp.solidworks_api.sketch import cut_feature, extrude_boss
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value, make_error_variants
-from solidworks_mcp.utils.security import validate_output_file, validate_path
+from solidworks_mcp.utils.security import (
+    check_overwrite_confirm,
+    normalize_path,
+    validate_output_file,
+    validate_path,
+)
 from solidworks_mcp.utils.validation import positive_number
 
 
@@ -271,17 +279,18 @@ _error_variants = make_error_variants
 def _open_source_part(sw_app: SolidWorksApp, source_path: str):
     ext = Path(source_path).suffix.lower()
     errors, warnings = _error_variants()
+    normalized = normalize_path(source_path)
     if ext == ".sldprt":
-        model = sw_app.app.OpenDoc6(source_path, swDocPART, swOpenDocOptions_Silent, "", errors, warnings)
+        model = sw_app.app.OpenDoc6(normalized, swDocPART, swOpenDocOptions_Silent, "", errors, warnings)
         return model, errors.value, warnings.value
     if ext not in {".stp", ".step"}:
         return None, -1, -1
-    model = sw_app.app.OpenDoc6(source_path, swDocPART, swOpenDocOptions_Silent, "", errors, warnings)
+    model = sw_app.app.OpenDoc6(normalized, swDocPART, swOpenDocOptions_Silent, "", errors, warnings)
     if model is not None:
         return model, errors.value, warnings.value
-    import_data = sw_app.app.GetImportFileData(source_path)
+    import_data = sw_app.app.GetImportFileData(normalized)
     load_errors = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
-    loaded = sw_app.app.LoadFile4(source_path, "r", import_data, load_errors)
+    loaded = sw_app.app.LoadFile4(normalized, "r", import_data, load_errors)
     part = loaded[0] if isinstance(loaded, tuple) else loaded
     return (sw_app.app.ActiveDoc if part is not None else None), load_errors.value, 0
 
@@ -481,12 +490,18 @@ def create_ring_light_v3(
         valid, message = validate_output_file(save_path, {".sldprt"}, overwrite_confirm)
         if not valid:
             return error_response(message, code="INVALID_OUTPUT_PATH")
+        layout_path = str(Path(normalize_path(save_path)).with_suffix(".layout.json"))
+        allowed, message = check_overwrite_confirm(layout_path, overwrite_confirm)
+        if not allowed:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
 
         layout = build_ring_light_v3_layout(row_counts=row_counts)
         model, open_errors, open_warnings = _open_source_part(sw_app, source_path)
         if model is None:
             return error_response("Could not open STEP-derived source part", code="SW_IMPORT_FAILED")
-        save_result = model.SaveAs3(save_path, 0, swSaveAsOptions_Silent)
+        save_result = model.SaveAs3(
+            normalize_path(save_path), 0, swSaveAsOptions_Silent
+        )
         if save_result != 0:
             return error_response(f"SaveAs3 failed with code {save_result}", code="SW_SAVE_FAILED")
 
@@ -502,8 +517,9 @@ def create_ring_light_v3(
         if not saved:
             return error_response("SolidWorks rejected final v3 save", code="SW_SAVE_FAILED")
 
-        layout_path = str(Path(save_path).with_suffix(".layout.json"))
         Path(layout_path).write_text(json.dumps(layout, ensure_ascii=False, indent=2), encoding="utf-8")
+        raised_count = int(layout["row_counts"][0])
+        cut_count = int(layout["total_led_count"]) - raised_count
         return success_response(
             data={
                 "saved_to": save_path,
@@ -521,7 +537,8 @@ def create_ring_light_v3(
             },
             message="Created STEP-based concave 9-row ring-light v3",
             warning=(
-                "The native SLDPRT uses 48 four-quadrant blind-cut bands, 204 shallow LED marker cuts, and 21 raised inner-row LED markers. "
+                "The native SLDPRT uses 48 four-quadrant blind-cut bands, "
+                f"{cut_count} shallow LED marker cuts, and {raised_count} raised inner-row LED markers. "
                 "Exact 30-60 degree inward axes are recorded in the layout JSON."
             ),
         )

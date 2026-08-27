@@ -26,7 +26,11 @@ from solidworks_mcp.solidworks_api.geometry import (
 from solidworks_mcp.solidworks_api.part import create_cylinder
 from solidworks_mcp.solidworks_api.sketch import cut_feature, extrude_boss
 from solidworks_mcp.utils.common import error_response, success_response
-from solidworks_mcp.utils.security import validate_output_file
+from solidworks_mcp.utils.security import (
+    check_overwrite_confirm,
+    normalize_path,
+    validate_output_file,
+)
 from solidworks_mcp.utils.validation import positive_number
 
 logger = logging.getLogger(__name__)
@@ -682,9 +686,12 @@ def _save_native_fallback(sw_app: SolidWorksApp, layout: dict, save_path: str) -
         model.ForceRebuild3(False)
     except Exception:
         pass
-    save_result = model.SaveAs3(save_path, 0, swSaveAsOptions_Silent)
+    save_result = model.SaveAs3(
+        normalize_path(save_path), 0, swSaveAsOptions_Silent
+    )
     if save_result != swFileSaveErrorNone:
         return error_response(f"SaveAs3 failed with code {save_result}", code="SW_SAVE_FAILED")
+    led_total = int(layout["total_led_count"])
     return success_response(
         data={
             "saved_to": save_path,
@@ -694,7 +701,7 @@ def _save_native_fallback(sw_app: SolidWorksApp, layout: dict, save_path: str) -
                 *dome_feature_names,
                 "DXF_INTERFACE_HOLES",
                 "CABLE_INTERFACE_PLACEHOLDER",
-                "LED_MARKERS_225_DOME_HEIGHT",
+                f"LED_MARKERS_{led_total}_DOME_HEIGHT",
             ],
             "total_led_count": layout["total_led_count"],
             "rows": layout["rows"],
@@ -704,7 +711,10 @@ def _save_native_fallback(sw_app: SolidWorksApp, layout: dict, save_path: str) -
                 "band_count": len(dome_feature_names),
             },
         },
-        message="Created native spherical-dome approximation with DXF interfaces and 225 LED markers",
+        message=(
+            "Created native spherical-dome approximation with DXF interfaces "
+            f"and {led_total} LED markers"
+        ),
         warning=(
             "SolidWorks 2026 rejected FeatureRevolve2 in this late-bound COM "
             "environment, so the native carrier uses 24 concentric annular bands. "
@@ -740,9 +750,13 @@ def create_ring_light(
             start_angle_degrees=start_angle_degrees,
             end_angle_degrees=end_angle_degrees,
         )
-        save = Path(save_path)
+        save = Path(normalize_path(save_path))
         stl_path = str(save.with_suffix(".generated.stl"))
         metadata_path = str(save.with_suffix(".layout.json"))
+        for derived in (stl_path, metadata_path):
+            allowed, message = check_overwrite_confirm(derived, overwrite_confirm)
+            if not allowed:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
         write_ring_light_stl(layout, stl_path)
         with open(metadata_path, "w", encoding="utf-8") as handle:
             json.dump(layout, handle, ensure_ascii=False, indent=2)

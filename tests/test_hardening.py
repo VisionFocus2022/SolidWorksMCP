@@ -1,0 +1,188 @@
+"""Wave-2 hardening tests.
+
+Covers: junction-aware path normalization (review P1-7), normalized paths at
+COM sinks, overwrite confirmation for derived artifacts (P1-6/action 17),
+dynamic LED counts in ring-light output (P1-9), and version-driven template
+candidates (action 18).
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import tempfile
+import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+from solidworks_mcp.examples import ring_light, ring_light_v3
+from solidworks_mcp.solidworks_api.design import _save_active_model
+from solidworks_mcp.utils.security import is_path_allowed, normalize_path
+from solidworks_mcp.utils.templates import _programdata_candidates
+
+
+class _SketchFeature:
+    def __init__(self, name: str = "Sketch"):
+        self.Name = name
+        self.GetNextFeature = lambda: None
+
+    def Select2(self, append, mark):
+        return True
+
+
+class FakeRingLightModel:
+    """COM double satisfying the native ring-light build path."""
+
+    def __init__(self):
+        self.Extension = Mock()
+        self.Extension.SelectByID2.return_value = True
+        self.SketchManager = Mock()
+        self.FeatureManager = Mock()
+        self.FeatureManager.FeatureCut3.return_value = SimpleNamespace(Name="Cut")
+        self.FeatureManager.FeatureExtrusion2.return_value = SimpleNamespace(
+            Name="Boss"
+        )
+        self.sketch = _SketchFeature()
+
+    def ClearSelection2(self, clear_all):
+        return None
+
+    def FeatureByName(self, name):
+        return SimpleNamespace(Select2=lambda append, mark: True)
+
+    def FirstFeature(self):
+        return self.sketch
+
+    def ForceRebuild3(self, force):
+        return True
+
+    def SaveAs3(self, path, options, flags):
+        return 0
+
+
+class TestNormalizePathOrdering(unittest.TestCase):
+    def test_existing_prefix_resolves_junction_before_folding(self):
+        with tempfile.TemporaryDirectory() as base:
+            root = os.path.join(base, "root")
+            outside = os.path.join(base, "outside")
+            os.makedirs(root)
+            os.makedirs(outside)
+            link = os.path.join(root, "link")
+            created = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", link, outside],
+                capture_output=True,
+                text=True,
+            )
+            if created.returncode != 0:
+                self.skipTest("junction creation not permitted on this host")
+            victim = os.path.join(root, "link", "..", "escape.sldprt")
+
+            normalized = normalize_path(victim)
+
+            self.assertEqual(normalized, os.path.join(base, "escape.sldprt"))
+            self.assertFalse(is_path_allowed(normalized, root))
+
+    def test_nonexistent_tail_resolves_deepest_existing_ancestor(self):
+        with tempfile.TemporaryDirectory() as base:
+            target = os.path.join(base, "a", "b", "new.sldprt")
+
+            normalized = normalize_path(target)
+
+            self.assertEqual(normalized, os.path.normpath(target))
+            self.assertTrue(os.path.isabs(normalized))
+
+
+class TestSinksUseNormalizedPaths(unittest.TestCase):
+    def test_save_active_model_passes_normalized_path_to_solidworks(self):
+        model = Mock()
+        model.SaveAs3.return_value = 0
+        result = {}
+        with patch(
+            "solidworks_mcp.solidworks_api.design.validate_output_file",
+            return_value=(True, ""),
+        ):
+            self.assertIsNone(_save_active_model(model, "part.sldprt", False, result))
+
+        model.SaveAs3.assert_called_once_with(normalize_path("part.sldprt"), 0, 1)
+        self.assertEqual(result["saved_to"], "part.sldprt")
+
+
+class TestDerivedFileConfirmation(unittest.TestCase):
+    @patch(
+        "solidworks_mcp.examples.ring_light.check_overwrite_confirm",
+        return_value=(False, "File already exists"),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light.validate_output_file",
+        return_value=(True, ""),
+    )
+    def test_ring_light_rejects_existing_derived_artifacts(self, _validate, _confirm):
+        result = ring_light.create_ring_light(Mock(), save_path="out.sldprt")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "INVALID_OUTPUT_PATH")
+
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.check_overwrite_confirm",
+        return_value=(False, "File already exists"),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.validate_output_file",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.validate_path",
+        return_value=(True, ""),
+    )
+    def test_v3_rejects_existing_layout_json(self, _path, _output, _confirm):
+        result = ring_light_v3.create_ring_light_v3(Mock(), "src.step", "out.sldprt")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "INVALID_OUTPUT_PATH")
+
+
+class TestRingLightDynamicCounts(unittest.TestCase):
+    def _run_native_fallback(self, row_counts):
+        layout = ring_light.build_ring_light_layout(row_counts=row_counts)
+        model = FakeRingLightModel()
+        sw = Mock()
+        sw.get_active_document.return_value = model
+        with patch.object(
+            ring_light, "create_new_part", return_value={"success": True}
+        ), patch.object(
+            ring_light, "create_cylinder", return_value={"success": True}
+        ):
+            return ring_light._save_native_fallback(sw, layout, "out.sldprt")
+
+    def test_message_and_feature_name_follow_custom_row_counts(self):
+        result = self._run_native_fallback([1] * 9)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["total_led_count"], 9)
+        self.assertIn("LED_MARKERS_9_DOME_HEIGHT", result["data"]["features"])
+        self.assertIn("9 LED markers", result["message"])
+        self.assertNotIn("225", result["message"])
+
+    def test_default_layout_reports_225(self):
+        result = self._run_native_fallback(None)
+
+        self.assertTrue(result["success"])
+        self.assertIn("LED_MARKERS_225_DOME_HEIGHT", result["data"]["features"])
+        self.assertIn("225 LED markers", result["message"])
+
+
+class TestVersionDrivenTemplates(unittest.TestCase):
+    def test_programdata_candidates_follow_configured_version(self):
+        with patch.dict(
+            os.environ, {"SOLIDWORKS_MCP_SOLIDWORKS_VERSION": "2027"}
+        ):
+            candidates = _programdata_candidates(["Part.prtdot"])
+
+        self.assertEqual(
+            candidates,
+            [r"C:\ProgramData\SolidWorks\SolidWorks 2027\templates\Part.prtdot"],
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

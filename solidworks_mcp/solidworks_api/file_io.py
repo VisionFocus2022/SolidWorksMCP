@@ -17,7 +17,11 @@ from solidworks_mcp.solidworks_api.constants import (
 )
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value, make_error_variants
-from solidworks_mcp.utils.security import validate_output_file, validate_path
+from solidworks_mcp.utils.security import (
+    normalize_path,
+    validate_output_file,
+    validate_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +97,7 @@ def open_document(
         target_type = doc_type if doc_type is not None else _guess_document_type(file_path)
         errs, warns = _make_error_variants()
         model = sw_app.app.OpenDoc6(
-            file_path,
+            normalize_path(file_path),
             target_type,
             swOpenDocOptions_Silent,
             "",
@@ -137,7 +141,7 @@ def import_step(
 
         errs, warns = _make_error_variants()
         model = sw_app.app.OpenDoc6(
-            file_path,
+            normalize_path(file_path),
             swDocPART,
             swOpenDocOptions_Silent,
             "",
@@ -181,7 +185,9 @@ def export_step(
         if model is None:
             return error_response("No active document to export")
 
-        result = model.SaveAs3(file_path, 0, swSaveAsOptions_Silent)
+        result = model.SaveAs3(
+            normalize_path(file_path), 0, swSaveAsOptions_Silent
+        )
         if result != swFileSaveErrorNone:
             return error_response(f"Export failed with code {result}")
 
@@ -211,7 +217,9 @@ def export_stl(
         if model is None:
             return error_response("No active document to export")
 
-        result = model.SaveAs3(file_path, 0, swSaveAsOptions_Silent)
+        result = model.SaveAs3(
+            normalize_path(file_path), 0, swSaveAsOptions_Silent
+        )
         if result != swFileSaveErrorNone:
             return error_response(f"STL export failed with code {result}")
 
