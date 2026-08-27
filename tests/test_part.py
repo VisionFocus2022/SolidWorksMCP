@@ -1,0 +1,136 @@
+"""Part modeling operation tests with isolated COM doubles."""
+
+from __future__ import annotations
+
+import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+from solidworks_mcp.solidworks_api.features import get_features
+from solidworks_mcp.solidworks_api.part import (
+    _create_circle_sketch,
+    _create_rectangle_sketch,
+    _get_or_create_part,
+    _select_plane,
+    create_box,
+    create_cylinder,
+    get_mass_properties,
+)
+
+
+class TestPartHelpers(unittest.TestCase):
+    def test_reuses_active_part(self):
+        model = Mock()
+        model.GetType.return_value = 1
+        sw = Mock()
+        sw.get_active_document.return_value = model
+        self.assertEqual(_get_or_create_part(sw), (model, False))
+
+    @patch("solidworks_mcp.solidworks_api.part.get_part_template", return_value="part.prtdot")
+    def test_creates_part_from_template(self, _template):
+        created = Mock()
+        sw = Mock()
+        sw.get_active_document.return_value = None
+        sw.app.NewDocument.return_value = created
+        self.assertEqual(_get_or_create_part(sw), (created, True))
+
+    @patch("solidworks_mcp.solidworks_api.part.get_part_template", return_value=None)
+    def test_missing_template_raises(self, _template):
+        sw = Mock()
+        sw.get_active_document.return_value = None
+        with self.assertRaises(RuntimeError):
+            _get_or_create_part(sw)
+
+    def test_plane_and_sketch_helpers(self):
+        model = Mock()
+        model.FeatureByName.side_effect = [None, SimpleNamespace(Select2=Mock(return_value=True))]
+        self.assertEqual(_select_plane(model), "\u524d\u89c6\u57fa\u51c6\u9762")
+        _create_circle_sketch(model, 0.01)
+        model.SketchManager.CreateCircleByRadius.assert_called_once_with(0, 0, 0, 0.01)
+        _create_rectangle_sketch(model, 0.04, 0.02)
+        model.SketchManager.CreateCornerRectangle.assert_called_once_with(-0.02, -0.01, 0, 0.02, 0.01, 0)
+
+
+class TestPartCreation(unittest.TestCase):
+    @patch("solidworks_mcp.solidworks_api.part._extrude_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._create_circle_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._select_plane", return_value="Front Plane")
+    @patch("solidworks_mcp.solidworks_api.part._get_or_create_part")
+    def test_create_cylinder_converts_units_and_saves(self, get_part, _plane, circle, extrude):
+        model = Mock()
+        model.SaveAs3.return_value = 0
+        get_part.return_value = (model, True)
+        extrude.return_value = SimpleNamespace(Name="Boss-Extrude1")
+        with patch("solidworks_mcp.solidworks_api.part.validate_output_file", return_value=(True, "")):
+            result = create_cylinder(Mock(), 20, 30, "part.sldprt")
+        self.assertTrue(result["success"])
+        circle.assert_called_once_with(model, 0.01)
+        extrude.assert_called_once_with(model, 0.03)
+        self.assertEqual(result["data"]["saved_to"], "part.sldprt")
+
+    def test_create_cylinder_rejects_invalid_dimensions_and_path(self):
+        self.assertEqual(create_cylinder(Mock(), 0, 2)["error"]["code"], "INVALID_PARAMETER")
+        with patch("solidworks_mcp.solidworks_api.part.validate_output_file", return_value=(False, "bad path")):
+            result = create_cylinder(Mock(), 1, 2, "bad.sldprt")
+        self.assertEqual(result["error"]["code"], "INVALID_OUTPUT_PATH")
+
+    @patch("solidworks_mcp.solidworks_api.part._select_plane", return_value=None)
+    @patch("solidworks_mcp.solidworks_api.part._get_or_create_part", return_value=(Mock(), True))
+    def test_create_box_requires_reference_plane(self, _part, _plane):
+        self.assertFalse(create_box(Mock(), 1, 2, 3)["success"])
+
+    @patch("solidworks_mcp.solidworks_api.part._extrude_sketch", return_value=None)
+    @patch("solidworks_mcp.solidworks_api.part._create_rectangle_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._select_plane", return_value="Front Plane")
+    @patch("solidworks_mcp.solidworks_api.part._get_or_create_part", return_value=(Mock(), True))
+    def test_create_box_reports_extrusion_failure(self, _part, _plane, _sketch, _extrude):
+        self.assertIn("Extrusion", create_box(Mock(), 1, 2, 3)["message"])
+
+    @patch("solidworks_mcp.solidworks_api.part._extrude_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._create_rectangle_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._select_plane", return_value="Front Plane")
+    @patch("solidworks_mcp.solidworks_api.part._get_or_create_part")
+    def test_create_box_success(self, get_part, _plane, rectangle, extrude):
+        model = Mock()
+        get_part.return_value = (model, False)
+        extrude.return_value = SimpleNamespace(Name="Boss1")
+        result = create_box(Mock(), 40, 20, 10)
+        self.assertTrue(result["success"])
+        rectangle.assert_called_once_with(model, 0.04, 0.02)
+        extrude.assert_called_once_with(model, 0.01)
+
+
+class TestPartInspection(unittest.TestCase):
+    def test_mass_properties_success_and_missing_states(self):
+        sw = Mock()
+        sw.get_active_document.return_value = None
+        self.assertFalse(get_mass_properties(sw)["success"])
+        model = Mock()
+        model.GetBodies2.return_value = []
+        sw.get_active_document.return_value = model
+        self.assertIn("No bodies", get_mass_properties(sw)["message"])
+        model.GetBodies2.return_value = [object()]
+        mass = SimpleNamespace(Volume=1.0, SurfaceArea=2.0, Mass=3.0, CenterOfMass=(0.1, 0.2, 0.3))
+        model.Extension.CreateMassProperty.return_value = mass
+        result = get_mass_properties(sw)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["center_of_mass"], [0.1, 0.2, 0.3])
+
+    def test_feature_listing(self):
+        second = SimpleNamespace(Name="Boss", GetNextFeature=lambda: None)
+        first = SimpleNamespace(Name="Origin", GetNextFeature=lambda: second)
+        model = SimpleNamespace(FirstFeature=lambda: first)
+        sw = Mock()
+        sw.get_active_document.return_value = model
+        result = get_features(sw)
+        self.assertEqual(result["data"]["count"], 2)
+
+    def test_inspection_com_errors_are_structured(self):
+        sw = Mock()
+        sw.get_active_document.side_effect = RuntimeError("COM")
+        self.assertFalse(get_mass_properties(sw)["success"])
+        self.assertFalse(get_features(sw)["success"])
+
+
+if __name__ == "__main__":
+    unittest.main()

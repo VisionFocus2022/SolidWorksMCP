@@ -1,0 +1,1 @@
+"""SolidWorks COM API wrappers."""

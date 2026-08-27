@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+venv/
+.venv*/
+
+# Test & coverage artifacts
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Logs
+*.log
+
+# Architecture-review rollback backups
+.audit-backup-*/
+
+# Scratch outputs (generated CAD files, smoke artifacts)
+output/
+
+# SolidWorks lock files
+~$*
+
+# Independent nested project with its own repository
+aicad/
