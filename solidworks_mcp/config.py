@@ -23,6 +23,17 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_positive_float(name: str) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return 0.0
+    try:
+        parsed = float(value)
+    except ValueError:
+        return 0.0
+    return parsed if parsed > 0 else 0.0
+
+
 @dataclass(frozen=True)
 class ServerConfig:
     """Configuration values shared by tools and API helpers."""
@@ -34,6 +45,7 @@ class ServerConfig:
     assembly_template: str | None
     drawing_template: str | None
     log_path: str
+    com_timeout_seconds: float
 
 
 def get_config() -> ServerConfig:
@@ -48,5 +60,8 @@ def get_config() -> ServerConfig:
         log_path=os.getenv(
             "SOLIDWORKS_MCP_LOG_PATH",
             str(_project_root() / "solidworks_mcp.log"),
+        ),
+        com_timeout_seconds=_env_positive_float(
+            "SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS"
         ),
     )

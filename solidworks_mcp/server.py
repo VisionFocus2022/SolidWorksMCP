@@ -37,7 +37,11 @@ from solidworks_mcp.solidworks_api.part import create_box, create_cylinder, get_
 from solidworks_mcp.examples.ring_light import create_ring_light
 from solidworks_mcp.examples.ring_light_v3 import create_ring_light_v3
 from solidworks_mcp.utils.com import call_or_value
-from solidworks_mcp.utils.com_executor import run_com
+from solidworks_mcp.utils.com_executor import (
+    ComCallTimeoutError,
+    ComExecutorPoisonedError,
+    run_com,
+)
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.security import DEFAULT_ALLOWED_ROOT
 
@@ -130,6 +134,12 @@ def _sw():
     return get_solidworks_app()
 
 
+def _com_timeout() -> Optional[float]:
+    """COM call timeout in seconds; None keeps the historic no-timeout mode."""
+    timeout = get_config().com_timeout_seconds
+    return timeout if timeout > 0 else None
+
+
 def _call_connected(
     operation: Callable[[Any], dict],
     launch_if_needed: Optional[bool] = None,
@@ -144,7 +154,11 @@ def _call_connected(
         return operation(sw)
 
     try:
-        return run_com(invoke)
+        return run_com(invoke, timeout=_com_timeout())
+    except ComCallTimeoutError as exc:
+        return error_response(str(exc), code="SW_TIMEOUT")
+    except ComExecutorPoisonedError as exc:
+        return error_response(str(exc), code="SW_EXECUTOR_POISONED")
     except Exception as exc:
         logging.getLogger(__name__).exception("Unhandled SolidWorks tool error")
         return error_response(
@@ -233,7 +247,7 @@ def solidworks_capabilities_resource() -> str:
 )
 def solidworks_status_resource() -> str:
     """Probe the cached SolidWorks connection without launching the application."""
-    status = run_com(_sw().status)
+    status = run_com(_sw().status, timeout=_com_timeout())
     status["allowed_root"] = DEFAULT_ALLOWED_ROOT
     return json.dumps(status, ensure_ascii=False, indent=2)
 
@@ -273,7 +287,11 @@ def solidworks_design_part_prompt(requirements: str) -> str:
 def solidworks_connect(launch_if_needed: Optional[bool] = None) -> ToolResult:
     """Connect to SolidWorks; null uses SOLIDWORKS_MCP_AUTO_START."""
     try:
-        return run_com(_sw().connect, launch_if_needed)
+        return run_com(_sw().connect, launch_if_needed, timeout=_com_timeout())
+    except ComCallTimeoutError as exc:
+        return error_response(str(exc), code="SW_TIMEOUT")
+    except ComExecutorPoisonedError as exc:
+        return error_response(str(exc), code="SW_EXECUTOR_POISONED")
     except Exception as exc:
         logging.getLogger(__name__).exception("SolidWorks connection request failed")
         return error_response(
