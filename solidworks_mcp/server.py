@@ -224,7 +224,7 @@ def _capabilities() -> Dict[str, Any]:
         ],
         "limitations": [
             "Design plans currently support primitive bosses and round cut holes.",
-            "solidworks_part_create_ring_light generates a validated 9-row spherical-dome layout; the native SLDPRT uses 24 annular bands when FeatureRevolve2 is unavailable.",
+            "solidworks_part_create_ring_light generates a validated spherical-dome LED layout (row_counts is free-form, defaulting to the confirmed 9-row product layout); the native SLDPRT uses 24 annular bands when FeatureRevolve2 is unavailable.",
             "Assembly mates use the compatibility AddMate5 API for basic mate types.",
             "Complex surfaces, drawings, simulation, and PDM are not yet exposed.",
         ],
@@ -415,7 +415,7 @@ def solidworks_part_create_ring_light(
     overwrite_confirm: bool = False,
     launch_if_needed: Optional[bool] = None,
 ) -> ToolResult:
-    """Create the confirmed 9-row dome ring-light part and save it as .sldprt."""
+    """Create a dome ring-light part (defaults to the confirmed 9-row layout) and save it as .sldprt."""
     return _call_connected(
         lambda sw: create_ring_light(
             sw,
@@ -440,7 +440,7 @@ def solidworks_part_create_ring_light_v3(
     overwrite_confirm: bool = False,
     launch_if_needed: Optional[bool] = None,
 ) -> ToolResult:
-    """Preserve a STEP-derived housing and replace its front annulus with a concave 9-row dish."""
+    """Preserve a STEP-derived housing and replace its front annulus with a concave dish (defaults to the confirmed 9-row layout)."""
     return _call_connected(
         lambda sw: create_ring_light_v3(
             sw,

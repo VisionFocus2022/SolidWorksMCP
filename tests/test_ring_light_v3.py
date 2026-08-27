@@ -35,6 +35,15 @@ class TestRingLightV3Layout(unittest.TestCase):
         self.assertEqual(layout["rows"][0]["angle_degrees"], 30.0)
         self.assertEqual(layout["rows"][-1]["angle_degrees"], 60.0)
 
+    def test_row_counts_are_free_between_one_and_sixty_four(self):
+        layout = build_ring_light_v3_layout(row_counts=[10, 12])
+        self.assertEqual(len(layout["rows"]), 2)
+        self.assertEqual(layout["total_led_count"], 22)
+        with self.assertRaises(ValueError):
+            build_ring_light_v3_layout(row_counts=[])
+        with self.assertRaises(ValueError):
+            build_ring_light_v3_layout(row_counts=[5] * 65)
+
     def test_rows_form_one_concave_sphere_and_point_inward(self):
         layout = build_ring_light_v3_layout()
         sphere_radius = layout["dish"]["sphere_radius_mm"]

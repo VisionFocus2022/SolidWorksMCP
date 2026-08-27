@@ -76,9 +76,14 @@ class TestRingLightLayout(unittest.TestCase):
         self.assertEqual(heights, sorted(heights, reverse=True))
         self.assertGreater(heights[0], layout["carrier_thickness_mm"])
         self.assertGreaterEqual(heights[-1], layout["carrier_thickness_mm"])
-    def test_custom_row_count_must_have_nine_rows(self):
+    def test_row_counts_are_free_between_one_and_sixty_four(self):
+        layout = build_ring_light_layout(row_counts=[21, 22])
+        self.assertEqual(len(layout["rows"]), 2)
+        self.assertEqual(layout["total_led_count"], 43)
         with self.assertRaises(ValueError):
-            build_ring_light_layout(row_counts=[21, 22])
+            build_ring_light_layout(row_counts=[])
+        with self.assertRaises(ValueError):
+            build_ring_light_layout(row_counts=[5] * 65)
 
     def test_phase_offsets_avoid_four_m3_mounting_axes(self):
         layout = build_ring_light_layout()

@@ -97,8 +97,8 @@ def build_ring_light_layout(
     dome_height = positive_number("dome_height", dome_height)
     radial_edge_margin = positive_number("radial_edge_margin", radial_edge_margin)
     counts = tuple(DEFAULT_ROW_COUNTS if row_counts is None else row_counts)
-    if len(counts) != 9:
-        raise ValueError("row_counts must contain exactly 9 row counts")
+    if not 1 <= len(counts) <= 64:
+        raise ValueError("row_counts must contain between 1 and 64 rows")
     if any(int(c) <= 0 for c in counts):
         raise ValueError("row_counts must contain positive integers")
     counts = tuple(int(c) for c in counts)
@@ -108,7 +108,9 @@ def build_ring_light_layout(
     if usable_radial_width <= 2.0 * radial_edge_margin:
         raise ValueError("not enough radial width for the requested edge margins")
 
-    row_angles = linspace(float(start_angle_degrees), float(end_angle_degrees), 9)
+    row_angles = linspace(
+        float(start_angle_degrees), float(end_angle_degrees), len(counts)
+    )
     if not 0.0 < row_angles[0] < row_angles[-1] < 90.0:
         raise ValueError("row angles must satisfy 0 < start < end < 90 degrees")
 
@@ -425,9 +427,11 @@ def _add_led_domes(triangles: List[Triangle], layout: dict) -> None:
                 _add_triangle(triangles, center, equator[(j + 1) % ring_segments], equator[j])
 
 
-def _write_ascii_stl(triangles: Sequence[Triangle], stl_path: str) -> None:
+def _write_ascii_stl(
+    triangles: Sequence[Triangle], stl_path: str, solid_name: str
+) -> None:
     with open(stl_path, "w", encoding="ascii", newline="\n") as handle:
-        handle.write("solid ring_light_9row_21_29_mm\n")
+        handle.write(f"solid {solid_name}\n")
         for a, b, c in triangles:
             normal = _norm(_cross(_sub(b, a), _sub(c, a)))
             handle.write(f"  facet normal {normal[0]:.8e} {normal[1]:.8e} {normal[2]:.8e}\n")
@@ -436,7 +440,7 @@ def _write_ascii_stl(triangles: Sequence[Triangle], stl_path: str) -> None:
                 handle.write(f"      vertex {p[0]:.8e} {p[1]:.8e} {p[2]:.8e}\n")
             handle.write("    endloop\n")
             handle.write("  endfacet\n")
-        handle.write("endsolid ring_light_9row_21_29_mm\n")
+        handle.write(f"endsolid {solid_name}\n")
 
 
 def write_ring_light_stl(layout: dict, stl_path: str) -> dict:
@@ -454,7 +458,11 @@ def write_ring_light_stl(layout: dict, stl_path: str) -> dict:
         -18.0,
     )
     _add_led_domes(triangles, layout)
-    _write_ascii_stl(triangles, stl_path)
+    rows = layout["rows"]
+    solid_name = (
+        f"ring_light_{len(rows)}row_{rows[0]['count']}_{rows[-1]['count']}_mm"
+    )
+    _write_ascii_stl(triangles, stl_path, solid_name)
     return {"triangle_count": len(triangles), "stl_path": stl_path}
 
 

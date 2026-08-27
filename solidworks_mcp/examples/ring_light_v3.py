@@ -150,11 +150,13 @@ def build_ring_light_v3_layout(
     center_hole_diameter = positive_number("center_hole_diameter", center_hole_diameter)
     led_diameter = positive_number("led_diameter", led_diameter)
     counts = tuple(DEFAULT_ROW_COUNTS if row_counts is None else (int(v) for v in row_counts))
-    if len(counts) != 9 or any(value <= 0 for value in counts):
-        raise ValueError("row_counts must contain exactly 9 positive integers")
+    if not 1 <= len(counts) <= 64 or any(value <= 0 for value in counts):
+        raise ValueError("row_counts must contain between 1 and 64 positive integers")
     if center_hole_diameter >= outer_diameter:
         raise ValueError("center_hole_diameter must be smaller than outer_diameter")
-    angles = linspace(float(start_angle_degrees), float(end_angle_degrees), 9)
+    angles = linspace(
+        float(start_angle_degrees), float(end_angle_degrees), len(counts)
+    )
     if not 0.0 < angles[0] < angles[-1] < 90.0:
         raise ValueError("row angles must satisfy 0 < start < end < 90 degrees")
     if not back_face_z < outer_row_z < front_face_z:
