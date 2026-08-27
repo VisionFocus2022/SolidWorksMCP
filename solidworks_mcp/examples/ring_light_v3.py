@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import json
 import math
-import os
 from pathlib import Path
 from typing import Any, List, Optional, Sequence
 
-import pythoncom
-import win32com.client
-
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
-from solidworks_mcp.solidworks_api.design import mm_to_m
+from solidworks_mcp.solidworks_api.constants import (
+    swDocPART,
+    swOpenDocOptions_Silent,
+    swSaveAsOptions_Silent,
+)
+from solidworks_mcp.solidworks_api.geometry import linspace, mm_to_m
+from solidworks_mcp.solidworks_api.sketch import cut_feature, extrude_boss
 from solidworks_mcp.utils.common import error_response, success_response
-from solidworks_mcp.utils.com import call_or_value
+from solidworks_mcp.utils.com import call_or_value, make_error_variants
 from solidworks_mcp.utils.security import validate_output_file, validate_path
 from solidworks_mcp.utils.validation import positive_number
 
@@ -30,16 +32,6 @@ DEFAULT_BACK_FACE_Z_MM = -16.0
 DEFAULT_OUTER_ROW_Z_MM = 1.5
 DEFAULT_REFERENCE_TOTAL_DEPTH_MM = 18.0025
 DEFAULT_NATIVE_INNER_LIP_MM = 1.13
-
-swDocPART = 1
-swOpenDocOptions_Silent = 1
-swSaveAsOptions_Silent = 1
-
-
-def _linspace(start: float, end: float, count: int) -> List[float]:
-    if count == 1:
-        return [start]
-    return [start + (end - start) * index / (count - 1) for index in range(count)]
 
 
 def _mounting_holes() -> List[dict]:
@@ -153,7 +145,7 @@ def build_ring_light_v3_layout(
         raise ValueError("row_counts must contain exactly 9 positive integers")
     if center_hole_diameter >= outer_diameter:
         raise ValueError("center_hole_diameter must be smaller than outer_diameter")
-    angles = _linspace(float(start_angle_degrees), float(end_angle_degrees), 9)
+    angles = linspace(float(start_angle_degrees), float(end_angle_degrees), 9)
     if not 0.0 < angles[0] < angles[-1] < 90.0:
         raise ValueError("row angles must satisfy 0 < start < end < 90 degrees")
     if not back_face_z < outer_row_z < front_face_z:
@@ -253,7 +245,7 @@ def build_concave_dish_bands(layout: dict, step_count: int = 48) -> List[dict]:
         + float(layout.get("native_approximation", {}).get("inner_lip_width_mm", 0.0))
     )
     outer_radius = float(layout["rows"][-1]["radius_mm"])
-    bounds = _linspace(inner_radius, outer_radius, int(step_count) + 1)
+    bounds = linspace(inner_radius, outer_radius, int(step_count) + 1)
     bands = []
     for band_index, index in enumerate(range(int(step_count) - 1, -1, -1), start=1):
         r0 = bounds[index]
@@ -273,11 +265,7 @@ def build_concave_dish_bands(layout: dict, step_count: int = 48) -> List[dict]:
     return bands
 
 
-def _error_variants():
-    return (
-        win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0),
-        win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0),
-    )
+_error_variants = make_error_variants
 
 
 def _open_source_part(sw_app: SolidWorksApp, source_path: str):
@@ -328,22 +316,11 @@ def _close_and_select_new_sketch(model: Any) -> bool:
 
 
 def _blind_cut_selected_sketch(model: Any, depth_mm: float):
-    depth = mm_to_m(depth_mm)
-    return model.FeatureManager.FeatureCut3(
-        True, False, False, 0, 0, depth, depth,
-        False, False, False, False, 0, 0,
-        False, False, False, False, False,
-        True, True, True, True, False, 0, 0, False,
-    )
+    return cut_feature(model, True, False, 0, mm_to_m(depth_mm))
 
 
 def _boss_selected_sketch(model: Any, height_mm: float):
-    height = mm_to_m(height_mm)
-    return model.FeatureManager.FeatureExtrusion2(
-        False, False, False, 0, 0, height, height,
-        False, False, False, False, 0, 0,
-        False, False, False, False, True, True, True, 0, 0, False,
-    )
+    return extrude_boss(model, mm_to_m(height_mm), reverse=False)
 
 
 def _band_crosses_mount_zone(inner_radius_mm: float, outer_radius_mm: float) -> bool:

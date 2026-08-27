@@ -6,6 +6,13 @@ import logging
 from typing import Any, Optional
 
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
+from solidworks_mcp.solidworks_api.constants import (
+    swDocPART,
+    swFileSaveErrorNone,
+    swSaveAsOptions_Silent,
+)
+from solidworks_mcp.solidworks_api.geometry import mm_to_m, select_plane
+from solidworks_mcp.solidworks_api.sketch import extrude_boss
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
 from solidworks_mcp.utils.security import validate_output_file
@@ -13,12 +20,6 @@ from solidworks_mcp.utils.templates import get_part_template
 from solidworks_mcp.utils.validation import positive_number
 
 logger = logging.getLogger(__name__)
-
-
-# SolidWorks API constants (mirrored to avoid early-binding dependency)
-swDocPART = 1
-swSaveAsOptions_Silent = 1
-swFileSaveErrorNone = 0
 
 
 def _get_or_create_part(sw_app: SolidWorksApp) -> tuple[Any, bool]:
@@ -46,12 +47,7 @@ PLANE_CANDIDATES = ["Front Plane", "前视基准面"]
 
 def _select_plane(model: Any) -> Optional[str]:
     """Select a reference plane by common Chinese/English names."""
-    model.ClearSelection2(True)
-    for plane_name in PLANE_CANDIDATES:
-        plane = model.FeatureByName(plane_name)
-        if plane is not None and plane.Select2(False, 0):
-            return plane_name
-    return None
+    return select_plane(model, PLANE_CANDIDATES, use_extension_fallback=False)
 
 
 def _create_circle_sketch(model: Any, radius: float) -> None:
@@ -80,17 +76,7 @@ def _create_rectangle_sketch(
 
 def _extrude_sketch(model: Any, height: float) -> Any:
     """Extrude the active sketch by the given height."""
-    # FeatureExtrusion2 signature for SolidWorks 2026 (23 arguments):
-    # FeatureExtrusion2(Reverse, T1, T2, Type1, Type2, D1, D2, Dchk1, Dchk2,
-    #                   Ddir1, Ddir2, Dang1, Dang2, OffsetReverse1,
-    #                   OffsetReverse2, TranslateSurface1, TranslateSurface2,
-    #                   Merge, UseFeatScope, UseAutoSelect, StartOffset,
-    #                   EndOffset, WallThickness)
-    return model.FeatureManager.FeatureExtrusion2(
-        True, False, False, 0, 0, height, height,
-        False, False, False, False, 0, 0,
-        False, False, False, False, True, True, True, 0, 0, False,
-    )
+    return extrude_boss(model, height)
 
 
 def create_cylinder(
@@ -117,8 +103,8 @@ def create_cylinder(
         if plane_name is None:
             return error_response("Could not select a reference plane (tried: Front Plane, 前视基准面)")
 
-        radius = diameter / 2.0 / 1000.0  # Convert mm to meters (default SW units)
-        height_m = height / 1000.0
+        radius = mm_to_m(diameter) / 2.0
+        height_m = mm_to_m(height)
 
         _create_circle_sketch(model, radius)
         feature = _extrude_sketch(model, height_m)
@@ -173,9 +159,9 @@ def create_box(
         if plane_name is None:
             return error_response("Could not select a reference plane (tried: Front Plane, 前视基准面)")
 
-        width_m = width / 1000.0
-        depth_m = depth / 1000.0
-        height_m = height / 1000.0
+        width_m = mm_to_m(width)
+        depth_m = mm_to_m(depth)
+        height_m = mm_to_m(height)
 
         _create_rectangle_sketch(model, width_m, depth_m)
         feature = _extrude_sketch(model, height_m)

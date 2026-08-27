@@ -10,17 +10,29 @@ from pathlib import Path
 from typing import Any, Iterable, List, Optional, Sequence, Tuple
 
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
-from solidworks_mcp.solidworks_api.design import create_new_part, mm_to_m
+from solidworks_mcp.solidworks_api.constants import (
+    swFileSaveErrorNone,
+    swSaveAsOptions_Silent,
+)
+from solidworks_mcp.solidworks_api.design import create_new_part
+from solidworks_mcp.solidworks_api.geometry import (
+    latest_feature_name as _latest_feature_name,
+)
+from solidworks_mcp.solidworks_api.geometry import (
+    linspace,
+    mm_to_m,
+    select_plane,
+)
 from solidworks_mcp.solidworks_api.part import create_cylinder
+from solidworks_mcp.solidworks_api.sketch import cut_feature, extrude_boss
 from solidworks_mcp.utils.common import error_response, success_response
-from solidworks_mcp.utils.com import call_or_value
 from solidworks_mcp.utils.security import validate_output_file
 from solidworks_mcp.utils.validation import positive_number
 
 logger = logging.getLogger(__name__)
 
-swSaveAsOptions_Silent = 1
-swFileSaveErrorNone = 0
+_FRONT_PLANE_CANDIDATES = ("Front Plane", "前视基准面")
+_TOP_PLANE_CANDIDATES = ("Top Plane", "上视基准面")
 
 DEFAULT_ROW_COUNTS = tuple(range(21, 30))
 DEFAULT_START_ANGLE_DEGREES = 30.0
@@ -38,12 +50,6 @@ DEFAULT_RADIAL_EDGE_MARGIN_MM = 2.0
 
 Vector = Tuple[float, float, float]
 Triangle = Tuple[Vector, Vector, Vector]
-
-
-def _linspace(start: float, end: float, count: int) -> List[float]:
-    if count == 1:
-        return [start]
-    return [start + (end - start) * i / (count - 1) for i in range(count)]
 
 
 def _angular_distance_degrees(a: float, b: float) -> float:
@@ -98,7 +104,7 @@ def build_ring_light_layout(
     if usable_radial_width <= 2.0 * radial_edge_margin:
         raise ValueError("not enough radial width for the requested edge margins")
 
-    row_angles = _linspace(float(start_angle_degrees), float(end_angle_degrees), 9)
+    row_angles = linspace(float(start_angle_degrees), float(end_angle_degrees), 9)
     if not 0.0 < row_angles[0] < row_angles[-1] < 90.0:
         raise ValueError("row angles must satisfy 0 < start < end < 90 degrees")
 
@@ -228,7 +234,7 @@ def build_spherical_dome_bands(layout: dict, step_count: int = 48) -> List[dict]
         raise ValueError("step_count must be at least 8")
     inner_radius = float(layout["center_hole_diameter_mm"]) / 2.0
     outer_radius = float(layout["rows"][-1]["radius_mm"])
-    bounds = _linspace(inner_radius, outer_radius, int(step_count) + 1)
+    bounds = linspace(inner_radius, outer_radius, int(step_count) + 1)
     bands = []
     for index, (r0, r1) in enumerate(zip(bounds, bounds[1:]), start=1):
         sample_radius = (r0 + r1) / 2.0
@@ -449,22 +455,9 @@ def write_ring_light_stl(layout: dict, stl_path: str) -> dict:
 
 
 
-def _select_top_plane(model: Any) -> bool:
-    model.ClearSelection2(True)
-    for plane_name in ("Top Plane", "上视基准面"):
-        feature = model.FeatureByName(plane_name)
-        if feature is not None and feature.Select2(False, 0):
-            return True
-        if model.Extension.SelectByID2(
-            plane_name, "PLANE", 0, 0, 0, False, 0, pythoncom.Nothing, 0
-        ):
-            return True
-    return False
-
-
 def _create_spherical_dome_boss(model: Any, layout: dict) -> Any:
     """Revolve an exact circular-arc profile around the carrier Z axis."""
-    if not _select_top_plane(model):
+    if not select_plane(model, list(_TOP_PLANE_CANDIDATES)):
         return None
 
     inner_radius = layout["center_hole_diameter_mm"] / 2.0
@@ -536,26 +529,6 @@ def _create_spherical_dome_boss(model: Any, layout: dict) -> Any:
         )
     return feature
 
-def _select_front_plane(model: Any) -> bool:
-    model.ClearSelection2(True)
-    for plane_name in ("Front Plane", "前视基准面"):
-        feature = model.FeatureByName(plane_name)
-        if feature is not None and feature.Select2(False, 0):
-            return True
-        if model.Extension.SelectByID2(plane_name, "PLANE", 0, 0, 0, False, 0, pythoncom.Nothing, 0):
-            return True
-    return False
-
-
-def _latest_feature_name(model: Any) -> Optional[str]:
-    latest = None
-    feat = call_or_value(model, "FirstFeature")
-    while feat is not None:
-        latest = feat.Name
-        feat = call_or_value(feat, "GetNextFeature")
-    return latest
-
-
 def _select_latest_sketch(model: Any) -> bool:
     sketch_name = _latest_feature_name(model)
     if not sketch_name:
@@ -577,48 +550,15 @@ def _select_latest_sketch(model: Any) -> bool:
 
 
 def _cut_selected_sketch_through_all(model: Any, nominal_depth_mm: float) -> Any:
-    depth = mm_to_m(nominal_depth_mm)
-    return model.FeatureManager.FeatureCut3(
-        True,
-        False,
-        True,
-        1,
-        0,
-        depth,
-        depth,
-        False,
-        False,
-        False,
-        False,
-        0,
-        0,
-        False,
-        False,
-        False,
-        False,
-        False,
-        True,
-        True,
-        True,
-        True,
-        False,
-        0,
-        0,
-        False,
-    )
+    return cut_feature(model, True, True, 1, mm_to_m(nominal_depth_mm))
 
 
 def _extrude_selected_sketch(model: Any, height_mm: float) -> Any:
-    height = mm_to_m(height_mm)
-    return model.FeatureManager.FeatureExtrusion2(
-        True, False, False, 0, 0, height, height,
-        False, False, False, False, 0, 0,
-        False, False, False, False, True, True, True, 0, 0, False,
-    )
+    return extrude_boss(model, mm_to_m(height_mm))
 
 
 def _create_circle_sketch(model: Any, circles: Sequence[Tuple[float, float, float]]) -> bool:
-    if not _select_front_plane(model):
+    if not select_plane(model, list(_FRONT_PLANE_CANDIDATES)):
         return False
     model.SketchManager.InsertSketch(True)
     for x_mm, y_mm, radius_mm in circles:
@@ -676,7 +616,7 @@ def _create_led_marker_boss(model: Any, layout: dict) -> Any:
 
 def _create_cable_interface_boss(model: Any, layout: dict) -> Any:
     outer_r = layout["outer_diameter_mm"] / 2.0
-    if not _select_front_plane(model):
+    if not select_plane(model, list(_FRONT_PLANE_CANDIDATES)):
         return None
     model.SketchManager.InsertSketch(True)
     model.SketchManager.CreateCornerRectangle(

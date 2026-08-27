@@ -6,23 +6,20 @@ import logging
 import os
 from typing import Optional
 
-import pythoncom
-import win32com.client
-
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
+from solidworks_mcp.solidworks_api.constants import (
+    swDocASSEMBLY,
+    swDocDRAWING,
+    swDocPART,
+    swFileSaveErrorNone,
+    swOpenDocOptions_Silent,
+    swSaveAsOptions_Silent,
+)
 from solidworks_mcp.utils.common import error_response, success_response
-from solidworks_mcp.utils.com import call_or_value
+from solidworks_mcp.utils.com import call_or_value, make_error_variants
 from solidworks_mcp.utils.security import validate_output_file, validate_path
 
 logger = logging.getLogger(__name__)
-
-# SolidWorks API constants
-swDocPART = 1
-swDocASSEMBLY = 2
-swDocDRAWING = 3
-swOpenDocOptions_Silent = 1
-swSaveAsOptions_Silent = 1
-swFileSaveErrorNone = 0
 
 # Common SolidWorks file load error codes
 FILE_LOAD_ERROR_NON_SW = 2097152
@@ -57,11 +54,7 @@ def _guess_document_type(file_path: str) -> int:
     return swDocPART
 
 
-def _make_error_variants() -> tuple:
-    """Create BYREF VARIANTs for OpenDoc6 error/warning outputs."""
-    errs = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
-    warns = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
-    return errs, warns
+_make_error_variants = make_error_variants
 
 
 def _format_load_error(error_code: int) -> str:

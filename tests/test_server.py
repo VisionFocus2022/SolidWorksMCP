@@ -24,9 +24,8 @@ class TestServerRegistration(unittest.TestCase):
         self.assertEqual(len(prompts), 1)
 
     def test_advertised_tool_list_matches_registration(self):
-        registered = {tool.name for tool in mcp._tool_manager.list_tools()}
-        advertised = set(_capabilities()["tools"])
-        self.assertEqual(registered, advertised)
+        registered = [tool.name for tool in mcp._tool_manager.list_tools()]
+        self.assertEqual(registered, _capabilities()["tools"])
 
     def test_handshake_version_matches_package(self):
         self.assertEqual(mcp._mcp_server.version, __version__)

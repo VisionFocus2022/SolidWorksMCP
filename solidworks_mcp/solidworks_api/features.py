@@ -6,14 +6,14 @@ import logging
 from typing import Any, Optional
 
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
+from solidworks_mcp.solidworks_api.constants import (
+    swFeatureSuppressed,
+    swFeatureUnsuppressed,
+)
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
 
 logger = logging.getLogger(__name__)
-
-# SolidWorks suppression state constants
-swFeatureSuppressed = 0
-swFeatureUnsuppressed = 1
 
 
 def _find_feature(model: Any, feature_name: str) -> Optional[Any]:

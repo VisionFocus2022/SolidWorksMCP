@@ -10,6 +10,12 @@ import pythoncom
 import win32com.client
 
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
+from solidworks_mcp.solidworks_api.constants import (
+    swDocASSEMBLY,
+    swMateCOINCIDENT,
+    swMateCONCENTRIC,
+    swMateDISTANCE,
+)
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
 from solidworks_mcp.utils.security import validate_extension, validate_path
@@ -18,11 +24,6 @@ from solidworks_mcp.utils.validation import finite_number
 
 logger = logging.getLogger(__name__)
 
-# SolidWorks API constants
-swDocASSEMBLY = 2
-swMateCOINCIDENT = 0
-swMateCONCENTRIC = 1
-swMateDISTANCE = 5
 ENTITY_TYPES = ("FACE", "PLANE", "AXIS", "EDGE", "VERTEX")
 REFERENCE_PLANE_ALIASES = {
     "Front Plane": "前视基准面",

@@ -8,7 +8,17 @@ from typing import Any, Dict, List, Optional
 import pythoncom
 
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
+from solidworks_mcp.solidworks_api.constants import (
+    swDocPART,
+    swFileSaveErrorNone,
+    swSaveAsOptions_Silent,
+)
+from solidworks_mcp.solidworks_api.geometry import (
+    latest_feature_name as _latest_feature_name,
+)
+from solidworks_mcp.solidworks_api.geometry import mm_to_m, select_plane
 from solidworks_mcp.solidworks_api.part import create_box, create_cylinder
+from solidworks_mcp.solidworks_api.sketch import cut_feature
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
 from solidworks_mcp.utils.security import validate_output_file
@@ -17,20 +27,11 @@ from solidworks_mcp.utils.validation import finite_number, parse_bool, positive_
 
 logger = logging.getLogger(__name__)
 
-swDocPART = 1
-swSaveAsOptions_Silent = 1
-swFileSaveErrorNone = 0
-
 PLANE_ALIASES = {
     "front": ["Front Plane", "前视基准面"],
     "top": ["Top Plane", "上视基准面"],
     "right": ["Right Plane", "右视基准面"],
 }
-
-
-def mm_to_m(value: float) -> float:
-    """Convert millimeters to SolidWorks default meter units."""
-    return value / 1000.0
 
 
 def _get_active_part(sw_app: SolidWorksApp) -> Any:
@@ -42,33 +43,7 @@ def _get_active_part(sw_app: SolidWorksApp) -> Any:
 
 def _select_plane(model: Any, plane: str) -> Optional[str]:
     candidates = PLANE_ALIASES.get(plane.lower(), [plane])
-    model.ClearSelection2(True)
-    for plane_name in candidates:
-        feature = model.FeatureByName(plane_name)
-        if feature is not None and feature.Select2(False, 0):
-            return plane_name
-        if model.Extension.SelectByID2(
-            plane_name,
-            "PLANE",
-            0,
-            0,
-            0,
-            False,
-            0,
-            pythoncom.Nothing,
-            0,
-        ):
-            return plane_name
-    return None
-
-
-def _latest_feature_name(model: Any) -> Optional[str]:
-    latest = None
-    feat = call_or_value(model, "FirstFeature")
-    while feat is not None:
-        latest = feat.Name
-        feat = call_or_value(feat, "GetNextFeature")
-    return latest
+    return select_plane(model, candidates)
 
 
 def _save_active_model(
@@ -214,34 +189,7 @@ def cut_round_hole(
 
         cut_depth = mm_to_m(diameter if depth is None else depth)
         end_condition = 1 if through_all else 0
-        feature = model.FeatureManager.FeatureCut3(
-            True,
-            False,
-            through_all,
-            end_condition,
-            0,
-            cut_depth,
-            cut_depth,
-            False,
-            False,
-            False,
-            False,
-            0,
-            0,
-            False,
-            False,
-            False,
-            False,
-            False,
-            True,
-            True,
-            True,
-            True,
-            False,
-            0,
-            0,
-            False,
-        )
+        feature = cut_feature(model, True, through_all, end_condition, cut_depth)
         if feature is None:
             return error_response("Cut feature creation failed")
 
