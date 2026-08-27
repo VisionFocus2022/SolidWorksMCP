@@ -34,8 +34,8 @@ from solidworks_mcp.solidworks_api.file_io import (
     open_document,
 )
 from solidworks_mcp.solidworks_api.part import create_box, create_cylinder, get_mass_properties
-from solidworks_mcp.solidworks_api.ring_light import create_ring_light
-from solidworks_mcp.solidworks_api.ring_light_v3 import create_ring_light_v3
+from solidworks_mcp.examples.ring_light import create_ring_light
+from solidworks_mcp.examples.ring_light_v3 import create_ring_light_v3
 from solidworks_mcp.utils.com import call_or_value
 from solidworks_mcp.utils.com_executor import run_com
 from solidworks_mcp.utils.common import error_response, success_response

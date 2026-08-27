@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import unittest
 
-from solidworks_mcp.solidworks_api.ring_light_v3 import (
+from solidworks_mcp.examples.ring_light_v3 import (
     build_concave_dish_bands,
     build_ring_light_v3_layout,
     _band_crosses_mount_zone,

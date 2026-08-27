@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from solidworks_mcp.solidworks_api.ring_light import (
+from solidworks_mcp.examples.ring_light import (
     DEFAULT_ROW_COUNTS,
     build_ring_light_layout,
     build_spherical_dome_bands,
