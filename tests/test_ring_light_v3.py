@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import math
+import os
+import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
+from solidworks_mcp.examples import ring_light_v3
 from solidworks_mcp.examples.ring_light_v3 import (
     build_concave_dish_bands,
     build_ring_light_v3_layout,
     _band_crosses_mount_zone,
+    create_ring_light_v3,
 )
 from solidworks_mcp.server import mcp
 
@@ -101,6 +107,157 @@ class TestRingLightV3ServerRegistration(unittest.TestCase):
     def test_v3_tool_is_registered(self):
         tools = {tool.name for tool in mcp._tool_manager.list_tools()}
         self.assertIn("solidworks_part_create_ring_light_v3", tools)
+
+
+class _V3Sketch:
+    def __init__(self):
+        self.Name = "Sketch"
+        self.GetNextFeature = lambda: None
+
+
+class FakeV3Model:
+    """COM double satisfying the STEP-based v3 build path."""
+
+    def __init__(self):
+        self.Extension = Mock()
+        self.Extension.SelectByRay.return_value = True
+        self.SketchManager = Mock()
+        self.FeatureManager = Mock()
+        self.FeatureManager.FeatureCut3.return_value = SimpleNamespace(Name="Cut")
+        self.FeatureManager.FeatureExtrusion2.return_value = SimpleNamespace(
+            Name="Boss"
+        )
+        self.sketch = _V3Sketch()
+
+    def ClearSelection2(self, clear_all):
+        return None
+
+    def FeatureByPositionReverse(self, index):
+        return SimpleNamespace(Select2=lambda append, mark: True)
+
+    def FirstFeature(self):
+        return self.sketch
+
+    def GetTitle(self):
+        return "RingLightV3"
+
+    def SaveAs3(self, path, options, flags):
+        return 0
+
+    def Save3(self, options, errors, warnings):
+        return True
+
+    def ForceRebuild3(self, force):
+        return True
+
+
+class TestCreateRingLightV3EndToEnd(unittest.TestCase):
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.check_overwrite_confirm",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.validate_output_file",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.validate_path",
+        return_value=(True, ""),
+    )
+    def test_full_build_reports_quadrant_bands_and_layout(
+        self, _path, _output, _confirm
+    ):
+        model = FakeV3Model()
+        sw = Mock()
+        sw.app.OpenDoc6.return_value = model
+
+        with tempfile.TemporaryDirectory() as tmp:
+            save_path = os.path.join(tmp, "v3.sldprt")
+            result = create_ring_light_v3(sw, "source.sldprt", save_path)
+
+            self.assertTrue(result["success"])
+            # 48 bands, each split into four quadrants to keep cardinal ribs.
+            self.assertEqual(len(result["data"]["dish_features"]), 192)
+            self.assertIn("204 shallow", result["warning"])
+            self.assertIn("21 raised", result["warning"])
+            self.assertTrue(os.path.isfile(os.path.join(tmp, "v3.layout.json")))
+
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.check_overwrite_confirm",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.validate_output_file",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.validate_path",
+        return_value=(True, ""),
+    )
+    def test_unselectable_front_face_fails_gracefully(
+        self, _path, _output, _confirm
+    ):
+        model = FakeV3Model()
+        model.Extension.SelectByRay.return_value = False
+        sw = Mock()
+        sw.app.OpenDoc6.return_value = model
+
+        result = create_ring_light_v3(sw, "source.sldprt", "out.sldprt")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.check_overwrite_confirm",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.validate_output_file",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.validate_path",
+        return_value=(True, ""),
+    )
+    def test_unopenable_source_reports_import_failure(
+        self, _path, _output, _confirm
+    ):
+        sw = Mock()
+        sw.app.OpenDoc6.return_value = None
+        sw.app.ActiveDoc = None
+
+        result = create_ring_light_v3(sw, "source.step", "out.sldprt")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "SW_IMPORT_FAILED")
+
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.check_overwrite_confirm",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.validate_output_file",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light_v3.validate_path",
+        return_value=(True, ""),
+    )
+    def test_step_source_falls_back_to_loadfile4(self, _path, _output, _confirm):
+        model = FakeV3Model()
+        sw = Mock()
+        sw.app.OpenDoc6.return_value = None
+        sw.app.LoadFile4.return_value = model
+        sw.app.ActiveDoc = model
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = create_ring_light_v3(
+                sw, "source.step", os.path.join(tmp, "v3.sldprt")
+            )
+
+            self.assertTrue(result["success"])
+            sw.app.LoadFile4.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

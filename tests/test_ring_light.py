@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import math
+import os
+import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
+from solidworks_mcp.examples import ring_light
 from solidworks_mcp.examples.ring_light import (
     DEFAULT_ROW_COUNTS,
     build_ring_light_layout,
     build_spherical_dome_bands,
     create_ring_light,
+    write_ring_light_stl,
 )
 from solidworks_mcp.server import mcp
 
@@ -121,6 +125,111 @@ class TestRingLightServerRegistration(unittest.TestCase):
 
     def test_default_row_counts_are_21_to_29(self):
         self.assertEqual(DEFAULT_ROW_COUNTS, tuple(range(21, 30)))
+
+
+class TestRingLightMeshExport(unittest.TestCase):
+    def test_write_ring_light_stl_writes_closed_solid(self):
+        layout = build_ring_light_layout()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            stl_path = os.path.join(tmp, "ring.stl")
+            info = write_ring_light_stl(layout, stl_path)
+
+            self.assertGreater(info["triangle_count"], 10000)
+            with open(stl_path, "r", encoding="ascii") as handle:
+                content = handle.read()
+            self.assertTrue(content.startswith("solid ring_light_9row_21_29_mm"))
+            self.assertIn("endsolid ring_light_9row_21_29_mm", content)
+
+
+class TestCreateRingLightEndToEnd(unittest.TestCase):
+    @patch(
+        "solidworks_mcp.examples.ring_light.check_overwrite_confirm",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light.validate_output_file",
+        return_value=(True, ""),
+    )
+    def test_native_path_writes_stl_and_layout_side_artifacts(
+        self, _validate, _confirm
+    ):
+        from tests.test_hardening import FakeRingLightModel
+
+        model = FakeRingLightModel()
+        sw = Mock()
+        sw.get_active_document.return_value = model
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            ring_light, "create_new_part", return_value={"success": True}
+        ), patch.object(
+            ring_light, "create_cylinder", return_value={"success": True}
+        ):
+            save_path = os.path.join(tmp, "ring.sldprt")
+            result = create_ring_light(sw, save_path=save_path)
+
+            self.assertTrue(result["success"])
+            self.assertTrue(result["data"]["native_dome_model"])
+            self.assertTrue(
+                os.path.isfile(os.path.join(tmp, "ring.generated.stl"))
+            )
+            self.assertTrue(
+                os.path.isfile(os.path.join(tmp, "ring.layout.json"))
+            )
+
+    @patch(
+        "solidworks_mcp.examples.ring_light.check_overwrite_confirm",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light.validate_output_file",
+        return_value=(True, ""),
+    )
+    def test_unselectable_planes_fail_gracefully(self, _validate, _confirm):
+        from tests.test_hardening import FakeRingLightModel
+
+        model = FakeRingLightModel()
+        model.FeatureByName = lambda name: None
+        model.Extension.SelectByID2.return_value = False
+        sw = Mock()
+        sw.get_active_document.return_value = model
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            ring_light, "create_new_part", return_value={"success": True}
+        ), patch.object(
+            ring_light, "create_cylinder", return_value={"success": True}
+        ):
+            result = create_ring_light(
+                sw, save_path=os.path.join(tmp, "ring.sldprt")
+            )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+
+    @patch(
+        "solidworks_mcp.examples.ring_light.check_overwrite_confirm",
+        return_value=(True, ""),
+    )
+    @patch(
+        "solidworks_mcp.examples.ring_light.validate_output_file",
+        return_value=(True, ""),
+    )
+    def test_save_failure_reports_solidworks_error(self, _validate, _confirm):
+        from tests.test_hardening import FakeRingLightModel
+
+        model = FakeRingLightModel()
+        model.SaveAs3 = lambda path, options, flags: 12
+        sw = Mock()
+        sw.get_active_document.return_value = model
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            ring_light, "create_new_part", return_value={"success": True}
+        ), patch.object(
+            ring_light, "create_cylinder", return_value={"success": True}
+        ):
+            result = create_ring_light(
+                sw, save_path=os.path.join(tmp, "ring.sldprt")
+            )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "SW_SAVE_FAILED")
 
 
 if __name__ == "__main__":

@@ -36,7 +36,6 @@ from solidworks_mcp.utils.validation import positive_number
 logger = logging.getLogger(__name__)
 
 _FRONT_PLANE_CANDIDATES = ("Front Plane", "前视基准面")
-_TOP_PLANE_CANDIDATES = ("Top Plane", "上视基准面")
 
 DEFAULT_ROW_COUNTS = tuple(range(21, 30))
 DEFAULT_START_ANGLE_DEGREES = 30.0
@@ -458,80 +457,6 @@ def write_ring_light_stl(layout: dict, stl_path: str) -> dict:
     return {"triangle_count": len(triangles), "stl_path": stl_path}
 
 
-
-def _create_spherical_dome_boss(model: Any, layout: dict) -> Any:
-    """Revolve an exact circular-arc profile around the carrier Z axis."""
-    if not select_plane(model, list(_TOP_PLANE_CANDIDATES)):
-        return None
-
-    inner_radius = layout["center_hole_diameter_mm"] / 2.0
-    outer_radius = layout["outer_diameter_mm"] / 2.0
-    dome = layout["dome"]
-    sphere_radius = float(dome["sphere_radius_mm"])
-    sphere_center_z = float(dome["sphere_center_z_mm"])
-    base_front_z = float(layout["carrier_thickness_mm"])
-    inner_z = _surface_z(layout, inner_radius)
-    outer_row_radius = float(layout["rows"][-1]["radius_mm"])
-    outer_row_z = float(layout["rows"][-1]["z_mm"])
-
-    model.SketchManager.InsertSketch(True)
-    entities = [
-        model.SketchManager.CreateCenterLine(
-            0, 0, 0,
-            0, mm_to_m(-(base_front_z + inner_z + 10.0)), 0,
-        ),
-        model.SketchManager.CreateLine(
-            mm_to_m(outer_radius), mm_to_m(-base_front_z), 0,
-            mm_to_m(inner_radius), mm_to_m(-base_front_z), 0,
-        ),
-        model.SketchManager.CreateLine(
-            mm_to_m(inner_radius), mm_to_m(-base_front_z), 0,
-            mm_to_m(inner_radius), mm_to_m(-(base_front_z + inner_z)), 0,
-        ),
-        model.SketchManager.CreateArc(
-            0, mm_to_m(-(base_front_z + sphere_center_z)), 0,
-            mm_to_m(inner_radius), mm_to_m(-(base_front_z + inner_z)), 0,
-            mm_to_m(outer_row_radius), mm_to_m(-(base_front_z + outer_row_z)), 0,
-            1,
-        ),
-        model.SketchManager.CreateLine(
-            mm_to_m(outer_row_radius), mm_to_m(-(base_front_z + outer_row_z)), 0,
-            mm_to_m(outer_radius), mm_to_m(-base_front_z), 0,
-        ),
-    ]
-    model.SketchManager.InsertSketch(True)
-
-    if any(entity is None for entity in entities):
-        return None
-    if not _select_latest_sketch(model):
-        return None
-    if not model.Extension.SelectByID2(
-        "",
-        "EXTSKETCHSEGMENT",
-        0,
-        0,
-        mm_to_m(base_front_z / 2.0),
-        True,
-        16,
-        pythoncom.Nothing,
-        0,
-    ):
-        return None
-
-    feature = model.FeatureManager.FeatureRevolve2(
-        True, True, False, False, False, False,
-        0, 0, 2.0 * math.pi, 0.0,
-        False, False, 0.0, 0.0,
-        0, 0.0, 0.0,
-        True, True, True,
-    )
-    if feature is not None:
-        feature.Name = (
-            f"SPHERICAL_DOME_R{sphere_radius:.1f}_"
-            f"{layout['rows'][0]['angle_degrees']:.0f}_TO_"
-            f"{layout['rows'][-1]['angle_degrees']:.0f}"
-        )
-    return feature
 
 def _select_latest_sketch(model: Any) -> bool:
     sketch_name = _latest_feature_name(model)
