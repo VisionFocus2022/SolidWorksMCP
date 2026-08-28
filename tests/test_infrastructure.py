@@ -88,6 +88,10 @@ class TestServerToolWrappers(unittest.TestCase):
             ),
             (server.solidworks_part_cut_round_hole, {"diameter": 1}),
             (
+                server.solidworks_part_create_annular_pattern,
+                {"rings": [{"radius_mm": 10, "count": 4, "diameter_mm": 3}]},
+            ),
+            (
                 server.solidworks_part_create_ring_light,
                 {"save_path": "ring.sldprt"},
             ),
@@ -141,7 +145,7 @@ class TestServerToolWrappers(unittest.TestCase):
         result = server.solidworks_design_capabilities()
 
         self.assertTrue(result["success"])
-        self.assertEqual(len(result["data"]["tools"]), 23)
+        self.assertEqual(len(result["data"]["tools"]), 25)
 
     def test_resources_return_json_payloads(self):
         status = json.loads(server.solidworks_status_resource())
@@ -154,7 +158,7 @@ class TestServerToolWrappers(unittest.TestCase):
         self.assertTrue(active["success"])
 
         capabilities = json.loads(server.solidworks_capabilities_resource())
-        self.assertEqual(len(capabilities["tools"]), 23)
+        self.assertEqual(len(capabilities["tools"]), 25)
 
 
 class TestComTimeout(unittest.TestCase):

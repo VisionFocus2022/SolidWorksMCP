@@ -10,7 +10,7 @@ from typing import Annotated, Any, Callable, Dict, List, Literal, Optional, Type
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from solidworks_mcp import __version__
 from solidworks_mcp.config import get_config
@@ -35,6 +35,11 @@ from solidworks_mcp.solidworks_api.file_io import (
     open_document,
 )
 from solidworks_mcp.solidworks_api.part import create_box, create_cylinder, get_mass_properties
+from solidworks_mcp.solidworks_api.pattern import (
+    AnnularRing,
+    build_annular_layout,
+    create_annular_pattern,
+)
 from solidworks_mcp.examples.ring_light import create_ring_light
 from solidworks_mcp.examples.ring_light_v3 import create_ring_light_v3
 from solidworks_mcp.utils.com import call_or_value
@@ -397,6 +402,54 @@ def solidworks_part_cut_round_hole(
     return _call_connected(
         lambda sw: cut_round_hole(
             sw, diameter, x, y, plane, depth, through_all
+        ),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Preview annular pattern layout", annotations=READ_ONLY, structured_output=True)
+def solidworks_pattern_annular_layout(
+    rings: List[AnnularRing],
+    avoid_angles_degrees: Optional[List[float]] = None,
+) -> ToolResult:
+    """Compute ring positions, optimized phases, and overlap warnings without touching SolidWorks."""
+    try:
+        layout = build_annular_layout(rings, avoid_angles_degrees)
+    except (ValueError, ValidationError) as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    return success_response(
+        data=layout,
+        message=(
+            f"Annular layout: {layout['total_feature_count']} features "
+            f"on {len(layout['rings'])} rings"
+        ),
+    )
+
+
+@mcp.tool(title="Create annular feature pattern", annotations=DESTRUCTIVE, structured_output=True)
+def solidworks_part_create_annular_pattern(
+    rings: List[AnnularRing],
+    plane: NonEmptyString = "top",
+    feature_kind: Literal["cut", "boss"] = "cut",
+    depth: Optional[PositiveMM] = None,
+    through_all: bool = True,
+    avoid_angles_degrees: Optional[List[float]] = None,
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Cut or extrude concentric rings of circular features on a named plane (bosses always blind)."""
+    return _call_connected(
+        lambda sw: create_annular_pattern(
+            sw,
+            rings,
+            plane=plane,
+            feature_kind=feature_kind,
+            depth=depth,
+            through_all=through_all,
+            avoid_angles_degrees=avoid_angles_degrees,
+            save_path=save_path,
+            overwrite_confirm=overwrite_confirm,
         ),
         launch_if_needed,
     )
