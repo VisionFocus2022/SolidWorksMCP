@@ -226,4 +226,4 @@ venv/Scripts/python.exe -m py_compile solidworks_mcp/solidworks_api/ring_light.p
 - CI 生效需远端仓库（git remote + push 后自动激活）
 - COM 超时启用后的实机验证（SW 模态框场景，确认超时值合理）
 - CloseDoc/会话过滤的实机长会话验证
-- 完整"通用环形阵列工具"如需独立立项（ADR-0006.6 边界声明）
+- 完整"通用环形阵列工具"→ **已独立立项完成（2026-08-28）**：见 `docs/prd-annular-pattern-tool.md` 与 ADR-0007；工具数 23→25、185 测试全绿、pattern.py 覆盖率 94%；实机验证脚本 `tools/validate_annular_pattern.py` 待 SW 运行时一键执行

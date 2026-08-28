@@ -1,3 +1,15 @@
+# ADR-0007：通用环形阵列工具契约（2026-08-28 独立立项）
+
+- **背景**：ADR-0006.6 声明"完整通用环形阵列工具应独立立项而非继续膨胀 examples"。用户裁决立项，并选定契约（双工具+pydantic 模型校验）与实机验证方式（留一键脚本）。
+- **决策**：
+  1. **双工具分工**：`solidworks_pattern_annular_layout`（READ_ONLY 纯几何预览，不触碰 SW）+ `solidworks_part_create_annular_pattern`（DESTRUCTIVE 执行）。预览与执行分离让布局数学可离线核验、执行可独立标注破坏性。
+  2. **逐项 schema 校验**：环参数用 pydantic `AnnularRing`（radius_mm>0 / count 1-1000 / diameter_mm>0 / phase 0-360），FastMCP 生成 `$defs` 引用——补上审查 P2-7 指出的聚合参数（List[Dict]）无逐项校验短板；上限（环 100/环内 1000/总量 5000）防特征数爆炸 DoS。
+  3. **实现路线**：沿用本仓实机验证过的"逐环单草图 + 单特征"（同 ring_light LED 标记路径），复用 geometry/sketch 原语；放弃 SW 原生 FeatureCircularPattern4（参数序无文档佐证，需实机摸索，风险高）。
+  4. **相位优化**：环未显式给 phase 且提供避让角时，沿用 ring_light 实机验证过的 72 步最大间隙搜索；显式 phase 永远优先。
+  5. **重叠只警不拒**：环内弦距<孔径、环间径向<半径和时给 warning（SolidWorks 会合并特征），不报错——合并是合法建模意图。
+  6. **生命周期边界**：脚本验证完即 `CloseDoc`（示范 P2-8 的新实践）；产物落 gitignored 的 output/。
+- **验证**：185 passed / 51 subtests；pattern.py 覆盖率 94%；实机一键脚本 `tools/validate_annular_pattern.py`（建板→三环 cut（一环相位优化）+一环 boss→特征树/体积窗口断言→SLDPRT+STEP 存档→关闭，退出码语义化）。
+
 # ADR-0001：所有 SolidWorks COM 调用收束到单一 STA 线程
 
 - **状态**：已接受（2026-07 实施，2026-08-28 记录）
