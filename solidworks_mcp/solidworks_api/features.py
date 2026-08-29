@@ -5,14 +5,17 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+import pythoncom
+
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
 from solidworks_mcp.solidworks_api.constants import (
     swFeatureSuppressed,
     swFeatureUnsuppressed,
 )
-from solidworks_mcp.solidworks_api.geometry import MAX_FEATURE_WALK
+from solidworks_mcp.solidworks_api.geometry import MAX_FEATURE_WALK, mm_to_m
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
+from solidworks_mcp.utils.validation import positive_number
 
 logger = logging.getLogger(__name__)
 
@@ -231,3 +234,115 @@ def _feature_dimensions(feat: Any) -> List[Dict[str, Any]]:
             break
         steps += 1
     return dims
+
+
+def set_dimension(
+    sw_app: SolidWorksApp,
+    dimension_full_name: str,
+    value_mm: float,
+) -> dict:
+    """Set a length dimension (full name from get_feature_details) in mm and rebuild.
+
+    Angle dimensions are NOT supported: GetSystemValue3/SetSystemValue3 carry
+    angles in radians on this machine (see the T6 note), so callers must only
+    target length dimensions with this tool.
+    """
+    try:
+        if not dimension_full_name:
+            return error_response(
+                "dimension_full_name must be non-empty", code="INVALID_PARAMETER"
+            )
+        value_mm = positive_number("value_mm", value_mm)
+
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+
+        dim = model.Parameter(dimension_full_name)
+        if dim is None:
+            return error_response(f"Dimension not found: {dimension_full_name}")
+
+        result = dim.SetSystemValue3(mm_to_m(value_mm), 1, "")  # swThisConfiguration
+        if isinstance(result, tuple):  # typed wrappers bundle byref out-params
+            result = result[0] if result else 0
+        if isinstance(result, int) and result < 0:
+            return error_response(
+                f"SolidWorks rejected the dimension change (code {result})",
+                code="SW_API_ERROR",
+            )
+        call_or_value(model, "EditRebuild3")  # zero-arg member: property
+
+        return success_response(
+            data={"dimension": dimension_full_name, "value_mm": value_mm},
+            message=f"Set {dimension_full_name} = {value_mm}mm and rebuilt",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to set dimension")
+        return error_response(f"Failed to set dimension: {exc}")
+
+
+def delete_feature(sw_app: SolidWorksApp, feature_name: str) -> dict:
+    """Delete one exactly matched feature from the tree (destructive).
+
+    Success is judged by the feature disappearing from the tree, not by the
+    EditDelete return value (void on this machine).
+    """
+    try:
+        if not feature_name:
+            return error_response(
+                "feature_name must be non-empty", code="INVALID_PARAMETER"
+            )
+
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+
+        if _find_feature(model, feature_name) is None:
+            return error_response(f"Feature not found: {feature_name}")
+
+        model.ClearSelection2(True)
+        picked = model.Extension.SelectByID2(
+            feature_name, "BODYFEATURE", 0, 0, 0, False, 0, pythoncom.Nothing, 0
+        )
+        if not picked:
+            return error_response(
+                f"SolidWorks refused to select feature '{feature_name}'",
+                code="SW_API_ERROR",
+            )
+
+        before_count = _feature_count(model)
+        call_or_value(model, "EditDelete")  # zero-arg member: property
+
+        if _find_feature(model, feature_name) is not None:
+            return error_response(
+                f"SolidWorks rejected deleting '{feature_name}' "
+                f"(still in tree after EditDelete)",
+                code="SW_API_ERROR",
+            )
+
+        return success_response(
+            data={
+                "deleted": feature_name,
+                "features_before": before_count,
+                "features_after": _feature_count(model),
+            },
+            message=f"Deleted feature '{feature_name}'",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to delete feature")
+        return error_response(f"Failed to delete feature: {exc}")
+
+
+def _feature_count(model: Any) -> int:
+    count = 0
+    feat = _first_feature(model)
+    while feat is not None and count < MAX_FEATURE_WALK:
+        count += 1
+        feat = _next_feature(feat)
+    return count

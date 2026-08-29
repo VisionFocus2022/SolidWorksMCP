@@ -109,11 +109,28 @@ def main() -> int:
                           "error": {"code": "NO_FEATURES", "details": None}})
     e2e.step("design.cut_round_hole", design.cut_round_hole, sw, 8.0, 0.0, 0.0, "top", None, True)
     e2e.step("features.set_feature_suppression", features.set_feature_suppression, sw, "E2E_Boss", False)
-    e2e.step("features.get_feature_details", features.get_feature_details, sw)
+    details = e2e.step("features.get_feature_details", features.get_feature_details, sw)
+    dims = [
+        d
+        for f in (details.get("data") or {}).get("features") or []
+        for d in f.get("dimensions") or []
+        if d.get("value_mm")
+    ]
+    if dims:
+        e2e.step("features.set_dimension", features.set_dimension, sw, dims[0]["full_name"], 25.0)
+    cut = next((n for n in names if n.startswith("切除") or "Cut" in n), None)
+    if cut:
+        e2e.step("features.delete_feature", features.delete_feature, sw, cut)
     e2e.step("measure.get_bounding_box", measure.get_bounding_box, sw)
     e2e.step("measure.measure_distance", measure.measure_distance, sw, [0.0, 0.0, 0.0], [60.0, 40.0, 0.0])
     e2e.step("topology.list_bodies", topology.list_bodies, sw)
-    e2e.step("topology.list_faces", topology.list_faces, sw)
+    box_listing = e2e.step("topology.list_faces", topology.list_faces, sw)
+    # 盒顶/底两面（2400mm²）互不相邻：圆角其一、倒角另一，几何确定性成立
+    big_faces = [f["name"] for f in (box_listing.get("data") or {}).get("faces") or []
+                 if f.get("area_mm2") == 2400.0]
+    if len(big_faces) >= 2:
+        e2e.step("decorations.apply_fillet", decorations.apply_fillet, sw, big_faces[:1], 2.0)
+        e2e.step("decorations.apply_chamfer", decorations.apply_chamfer, sw, big_faces[1:2], 1.0)
     e2e.step("part.get_mass_properties", part.get_mass_properties, sw)
     e2e.step("file_io.export_step", file_io.export_step, sw, str(WORK_DIR / "e2e_box.step"), True)
     e2e.step("file_io.export_stl", file_io.export_stl, sw, str(WORK_DIR / "e2e_box.stl"), True)
@@ -133,8 +150,8 @@ def main() -> int:
     ring_faces = [f["name"] for f in (listing.get("data") or {}).get("faces") or []]
     if len(ring_faces) >= 2:
         e2e.step("decorations.apply_fillet", decorations.apply_fillet, sw, ring_faces[:2], 2.0)
-        # 倒角用未圆角的面：已圆角面的边无直边可倒，SW 会拒绝（e2e 实证）
-        e2e.step("decorations.apply_chamfer", decorations.apply_chamfer, sw, ring_faces[-1:], 1.0)
+        # ring 四面环形相邻，柱面圆角后端面倒角几何求解非确定（e2e 两轮一过一败），
+        # 倒角已移至盒链的对顶/底面；此处仅 shell
         e2e.step("decorations.apply_shell", decorations.apply_shell, sw, ring_faces[1:2], 2.0)
     else:
         e2e.steps.append({"name": "decorations.chain", "success": False,

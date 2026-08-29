@@ -24,9 +24,11 @@ from solidworks_mcp.solidworks_api.design import (
     execute_design_plan,
 )
 from solidworks_mcp.solidworks_api.features import (
+    delete_feature,
     get_feature_details,
     get_features,
     rename_feature,
+    set_dimension,
     set_feature_suppression,
 )
 from solidworks_mcp.solidworks_api.file_io import (
@@ -733,6 +735,31 @@ def solidworks_features_get_details(
     """Type, dimensions (mm), and suppression per feature; null describes all."""
     return _call_connected(
         lambda sw: get_feature_details(sw, feature_name),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Set dimension value", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_dimension_set(
+    dimension_full_name: NonEmptyString,
+    value_mm: PositiveMM,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Set a length dimension (full name from features_get_details) in mm and rebuild."""
+    return _call_connected(
+        lambda sw: set_dimension(sw, dimension_full_name, value_mm),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Delete feature", annotations=DESTRUCTIVE, structured_output=True)
+def solidworks_feature_delete(
+    feature_name: NonEmptyString,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Delete one exactly matched feature from the tree (destructive, no undo guarantee)."""
+    return _call_connected(
+        lambda sw: delete_feature(sw, feature_name),
         launch_if_needed,
     )
 
