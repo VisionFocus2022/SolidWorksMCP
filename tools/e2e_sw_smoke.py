@@ -73,7 +73,14 @@ class E2E:
 
 
 def main() -> int:
-    from solidworks_mcp.solidworks_api import design, features, file_io, measure, part
+    from solidworks_mcp.solidworks_api import (
+        design,
+        features,
+        file_io,
+        measure,
+        part,
+        topology,
+    )
     from solidworks_mcp.solidworks_api.app import get_solidworks_app
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
@@ -105,6 +112,8 @@ def main() -> int:
     e2e.step("features.get_feature_details", features.get_feature_details, sw)
     e2e.step("measure.get_bounding_box", measure.get_bounding_box, sw)
     e2e.step("measure.measure_distance", measure.measure_distance, sw, [0.0, 0.0, 0.0], [60.0, 40.0, 0.0])
+    e2e.step("topology.list_bodies", topology.list_bodies, sw)
+    e2e.step("topology.list_faces", topology.list_faces, sw)
     e2e.step("part.get_mass_properties", part.get_mass_properties, sw)
     e2e.step("file_io.export_step", file_io.export_step, sw, str(WORK_DIR / "e2e_box.step"), True)
     e2e.step("file_io.export_stl", file_io.export_stl, sw, str(WORK_DIR / "e2e_box.stl"), True)
@@ -121,9 +130,12 @@ def main() -> int:
 
     # --- 装配链（可选段：当前无新建装配文档的 API，见 T11）---
     from solidworks_mcp.solidworks_api import assembly
+    from solidworks_mcp.utils.com import call_or_value
 
     active = sw.get_active_document()
-    if active is not None and getattr(active, "GetType", lambda: 0)() == 2:  # swDocASSEMBLY
+    # GetType 在实机是属性（零参 COM 成员铁律），须经 call_or_value 取值
+    doc_type = call_or_value(active, "GetType") if active is not None else 0
+    if doc_type == 2:  # swDocASSEMBLY
         e2e.step("assembly.add_component", assembly.add_component, sw, box_path, 0.0, 0.0, 0.0)
         e2e.step("assembly.add_component2", assembly.add_component, sw, cyl_path, 30.0, 0.0, 0.0)
         e2e.step("assembly.get_components", assembly.get_components, sw)

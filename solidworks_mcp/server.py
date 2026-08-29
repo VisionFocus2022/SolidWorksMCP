@@ -36,6 +36,7 @@ from solidworks_mcp.solidworks_api.file_io import (
     import_step,
     open_document,
 )
+from solidworks_mcp.solidworks_api.topology import list_bodies, list_faces
 from solidworks_mcp.solidworks_api.measure import get_bounding_box, measure_distance
 from solidworks_mcp.solidworks_api.part import (
     create_box,
@@ -689,6 +690,26 @@ def solidworks_get_bounding_box(
 ) -> ToolResult:
     """Merged solid-body bounding box in mm (min/max/size/center)."""
     return _call_connected(get_bounding_box, launch_if_needed)
+
+
+@mcp.tool(title="List and name faces", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_list_faces(
+    name_prefix: str = "Face",
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Enumerate solid faces (type/area mm2); unnamed faces get stable entity names for mating."""
+    return _call_connected(
+        lambda sw: list_faces(sw, name_prefix),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="List solid bodies", annotations=READ_ONLY, structured_output=True)
+def solidworks_part_list_bodies(
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """List solid bodies with names and face counts."""
+    return _call_connected(list_bodies, launch_if_needed)
 
 
 @mcp.tool(title="Rename feature", annotations=DESTRUCTIVE, structured_output=True)
