@@ -124,6 +124,7 @@ def main() -> int:
 
     e2e.step("part.create_cylinder", part.create_cylinder, sw, 20.0, 50.0, cyl_path, True)
     e2e.step("part.create_cone", part.create_cone, sw, 30.0, 10.0, 40.0, str(WORK_DIR / "e2e_cone.SLDPRT"), True)
+    e2e.step("part.create_revolved", part.create_revolved, sw, 40.0, 10.0, 20.0, "front", str(WORK_DIR / "e2e_ring.SLDPRT"), True)
     e2e.step("file_io.close_document3", file_io.close_document, sw, False)
     e2e.step("file_io.import_step", file_io.import_step, sw, str(WORK_DIR / "e2e_box.step"))
     e2e.step("file_io.close_document4", file_io.close_document, sw, False)

@@ -42,6 +42,7 @@ from solidworks_mcp.solidworks_api.part import (
     create_box,
     create_cone,
     create_cylinder,
+    create_revolved,
     get_mass_properties,
 )
 from solidworks_mcp.solidworks_api.pattern import (
@@ -449,6 +450,26 @@ def solidworks_part_create_cone(
     return _call_connected(
         lambda sw: create_cone(
             sw, bottom_diameter, top_diameter, height, save_path, overwrite_confirm
+        ),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Create revolved part", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_create_revolved(
+    outer_diameter: PositiveMM,
+    height: PositiveMM,
+    bore_diameter: NonNegativeMM = 0.0,
+    plane: str = "front",
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Revolved disc/ring/shaft segment (feature-tree based) around a sketch centerline."""
+    return _call_connected(
+        lambda sw: create_revolved(
+            sw, outer_diameter, height, bore_diameter, plane, save_path,
+            overwrite_confirm,
         ),
         launch_if_needed,
     )

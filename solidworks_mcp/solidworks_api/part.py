@@ -298,6 +298,117 @@ def create_cone(
         return error_response(f"Failed to create cone: {exc}")
 
 
+def create_revolved(
+    sw_app: SolidWorksApp,
+    outer_diameter: float,
+    height: float,
+    bore_diameter: float = 0.0,
+    plane: str = "front",
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+) -> dict:
+    """Create a revolved disc/ring/shaft segment with a real feature tree.
+
+    Sketch on the front plane: a construction centerline along sketch-y is
+    the revolve axis; the rectangle profile spans [bore/2, outer/2] in
+    radius and ±height/2. The part therefore revolves around the model Y
+    axis (diameter in X/Z, height along Y). FeatureRevolve2 takes the
+    full-circle angle in radians (real-machine contract, T6 probe).
+    """
+    try:
+        outer_diameter = positive_number("outer_diameter", outer_diameter)
+        height = positive_number("height", height)
+        bore_diameter = finite_number("bore_diameter", bore_diameter)
+        if bore_diameter < 0 or bore_diameter >= outer_diameter:
+            return error_response(
+                "bore_diameter must be in [0, outer_diameter)",
+                code="INVALID_PARAMETER",
+            )
+        if plane != "front":
+            return error_response(
+                "Only the front plane revolve is supported",
+                code="INVALID_PARAMETER",
+            )
+        if save_path:
+            valid, message = validate_output_file(
+                save_path, {".sldprt"}, overwrite_confirm
+            )
+            if not valid:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+
+        model, _was_created = _get_or_create_part(sw_app)
+
+        plane_name = _select_plane(model)
+        if plane_name is None:
+            return error_response("Could not select a reference plane (tried: Front Plane, 前视基准面)")
+
+        half_height_m = mm_to_m(height) / 2.0
+        outer_radius_m = mm_to_m(outer_diameter) / 2.0
+        bore_radius_m = mm_to_m(bore_diameter) / 2.0
+
+        model.SketchManager.InsertSketch(True)
+        axis = model.SketchManager.CreateLine(
+            0, -half_height_m, 0, 0, half_height_m, 0
+        )
+        axis.ConstructionGeometry = True
+        model.SketchManager.CreateCornerRectangle(
+            bore_radius_m, -half_height_m, 0,
+            outer_radius_m, half_height_m, 0,
+        )
+        model.SketchManager.InsertSketch(True)
+
+        feature = model.FeatureManager.FeatureRevolve2(
+            True,   # SingleDir
+            True,   # IsSolid
+            False,  # IsThin
+            False,  # IsCut
+            False,  # ReverseDir
+            False,  # BothDirectionUpToSameEntity
+            0,      # Dir1Type = swEndCondBlind
+            0,      # Dir2Type
+            2 * math.pi,  # Dir1Angle（弧度，全周）
+            0.0,    # Dir2Angle
+            False,  # OffsetReverse1
+            False,  # OffsetReverse2
+            0.0,    # OffsetDistance1
+            0.0,    # OffsetDistance2
+            0,      # ThinType
+            0.0,    # ThinThickness1
+            0.0,    # ThinThickness2
+            True,   # Merge
+            True,   # UseFeatScope
+            True,   # UseAutoSelect
+        )
+        if feature is None:
+            return error_response("Revolve feature creation failed")
+
+        result = {"feature_name": feature.Name}
+
+        if save_path:
+            ok, message, sink_path = ensure_sink_path(save_path)
+            if not ok:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
+            if save_result != swFileSaveErrorNone:
+                return error_response(f"SaveAs3 failed with code {save_result}")
+            result["saved_to"] = save_path
+
+        return success_response(
+            data=result,
+            message=(
+                f"Created revolved part with outer_diameter={outer_diameter}mm, "
+                f"bore_diameter={bore_diameter}mm, height={height}mm"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to create revolved part")
+        return error_response(f"Failed to create revolved part: {exc}")
+
+
 def get_mass_properties(sw_app: SolidWorksApp) -> dict:
     """Read mass properties of the active part."""
     try:
