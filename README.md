@@ -6,11 +6,11 @@
 
 ## 主要能力
 
-- 使用官方 Python MCP SDK，通过 stdio 提供 54 个 tools、3 个 resources、3 个 prompts
+- 使用官方 Python MCP SDK，通过 stdio 提供 54 个 tools、3 个 resources、5 个 prompts
 - 连接正在运行的 SolidWorks，或在明确允许时自动启动
 - 新建零件，创建板件、块体、圆柱体和圆孔
 - 生成 9 行球形穹顶环形灯零件（产品专用工具，代码位于 solidworks_mcp/examples/）
-- 按顺序执行 new_part、plate、box、cylinder、hole 设计计划
+- 按顺序执行 new_part、plate、box、cylinder、cone、hole、threaded_hole、annular_pattern 设计计划
 - 打开 SolidWorks 文件，导入 STEP，导出 STEP/STL
 - 查询活动文档、质量属性、特征树和装配零部件
 - 重命名、抑制或解除抑制特征
@@ -149,11 +149,14 @@ python -m coverage report
 
 ## 当前边界
 
-当前设计能力适合棱柱、圆柱、板件和圆孔等基础参数化零件。复杂草图约束、阵列、圆角/倒角、旋转、扫掠、放样、曲面、工程图、仿真和 PDM 尚未作为稳定工具暴露。基础装配配合仍使用 SolidWorks 兼容 API，建议在正式生产装配上先使用副本验证。
+当前设计能力适合棱柱、圆柱、圆锥、板件、圆孔和螺纹孔等基础参数化零件，并支持环形阵列、旋转轮廓与工程图（三视图+尺寸+PDF/PNG 导出）。复杂草图约束、线性/草图驱动阵列、扫掠、放样、曲面、GD&T 标注、剖视图、DXF 导出、仿真和 PDM 尚未作为稳定工具暴露。基础装配配合仍使用 SolidWorks 兼容 API，建议在正式生产装配上先使用副本验证。
 ## 面向 AI 的工作流提示词
 
-MCP prompts（3 个）：`solidworks_design_part_prompt`（零件设计+感知精修工作流：
+MCP prompts（5 个）：`solidworks_design_part_prompt`（零件设计+感知精修工作流：
 特征详情→尺寸修改→面命名→装饰特征→材料/方程式）、
 `solidworks_assembly_prompt`（装配：新建→加组件→list_faces 命名→mate→
 干涉检查→BOM）、`solidworks_drawing_prompt`（工程图：建图→投三视图→
-入尺寸→导出 PDF/PNG）。跨引擎几何迁移见 `docs/csg-plan-v1.md`。
+入尺寸→导出 PDF/PNG）、`solidworks_csg_rebuild_prompt`（跨引擎 CSG 重建：
+box 首操作+沿轴堆叠+原子回滚契约，附 4-op 示例）、
+`solidworks_parametric_prompt`（参数化件族：材料→方程式→驱动尺寸→配置快照）。
+跨引擎几何迁移见 `docs/csg-plan-v1.md`。

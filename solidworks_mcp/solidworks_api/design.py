@@ -45,6 +45,19 @@ PLANE_ALIASES = {
     "right": ["Right Plane", "右视基准面"],
 }
 
+# Canonical design-plan operation vocabulary (single source of truth for
+# execute_design_plan, server capabilities, and docstrings).
+DESIGN_PLAN_OPERATIONS = (
+    "new_part",
+    "box",
+    "plate",
+    "cylinder",
+    "cone",
+    "hole",
+    "threaded_hole",
+    "annular_pattern",
+)
+
 # Hole-feature sketch planes: everything this repo models grows +Z from
 # a Front-Plane sketch (part.PLANE_CANDIDATES: box/plate/cylinder/cone),
 # so the "top" of such a part is its +Z face and a hole asked for plane
@@ -540,8 +553,7 @@ def execute_design_plan(
             else:
                 return error_response(
                     f"Unsupported operation at index {index}: {op_type}. "
-                    "Supported types: new_part, box, plate, cylinder, cone, "
-                    "hole, threaded_hole, annular_pattern."
+                    f"Supported types: {', '.join(DESIGN_PLAN_OPERATIONS)}."
                 )
         except KeyError as exc:
             return error_response(

@@ -21,7 +21,7 @@ class TestServerRegistration(unittest.TestCase):
         prompts = mcp._prompt_manager.list_prompts()
         self.assertEqual(len(tools), 54)
         self.assertEqual(len(resources), 3)
-        self.assertEqual(len(prompts), 3)
+        self.assertEqual(len(prompts), 5)
 
     def test_advertised_tool_list_matches_registration(self):
         registered = [tool.name for tool in mcp._tool_manager.list_tools()]

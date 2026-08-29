@@ -24,6 +24,7 @@ from solidworks_mcp.solidworks_api.assembly import (
     new_assembly,
 )
 from solidworks_mcp.solidworks_api.design import (
+    DESIGN_PLAN_OPERATIONS,
     create_new_part,
     create_plate,
     cut_round_hole,
@@ -294,7 +295,7 @@ def _capabilities() -> Dict[str, Any]:
             "Design plans currently support primitive bosses (box/plate/cylinder/cone), round cut holes, ISO threaded holes, and annular patterns.",
             "solidworks_part_create_ring_light generates a validated spherical-dome LED layout (row_counts is free-form, defaulting to the confirmed 9-row product layout); the native SLDPRT uses 24 annular bands when FeatureRevolve2 is unavailable.",
             "Assembly mates use the compatibility AddMate5 API for basic mate types.",
-            "Complex surfaces, drawings, simulation, and PDM are not yet exposed.",
+            "Loft/sweep/complex surfaces, GD&T annotations, section views, DXF export, simulation, and PDM are not yet exposed.",
         ],
     }
 
@@ -388,6 +389,52 @@ def solidworks_drawing_prompt(requirements: str) -> str:
         "under allowed_root; overwrite needs confirmation). The drawing holds the "
         "part open afterwards — close documents when done.\n\n"
         f"Drawing requirements:\n{requirements}"
+    )
+
+
+@mcp.prompt(title="Rebuild an aicad CSG plan")
+def solidworks_csg_rebuild_prompt(requirements: str) -> str:
+    """Rebuild a cross-engine CSG scene as an SW feature tree."""
+    return (
+        "You are rebuilding an aicad CSG scene in SolidWorks through "
+        "solidworks-mcp.\n"
+        "Call solidworks_features_rebuild_csg with one plan (version 1, "
+        "units mm; ops: box, cylinder, cone, cut_cylinder). Contract: the "
+        "first op must be box (it creates the part and its stock at the "
+        "origin); solid ops stack on the axis -- at.z must equal the current "
+        "stack top (heights add up); cut_cylinder keeps its x/y offset and "
+        "cuts down from the top; a failed plan rolls back atomically, so fix "
+        "only the offending op and re-run. Feature names must be unique.\n"
+        "Example 4-op plan:\n"
+        '{"version": 1, "units": "mm", "operations": [\n'
+        '  {"op": "box", "name": "base", "size": [80, 60, 10], "at": [0, 0, 0]},\n'
+        '  {"op": "cylinder", "name": "boss", "diameter": 24, "height": 14, '
+        '"at": [0, 0, 10]},\n'
+        '  {"op": "cut_cylinder", "name": "hole1", "diameter": 8, '
+        '"at": [20, 0, 24], "through": true},\n'
+        '  {"op": "cut_cylinder", "name": "hole2", "diameter": 8, '
+        '"at": [-20, 0, 24], "depth": 12}]}\n'
+        "Verify the result with solidworks_features_list and "
+        "solidworks_part_get_mass_properties before saving.\n\n"
+        f"CSG scene to rebuild:\n{requirements}"
+    )
+
+
+@mcp.prompt(title="Drive a part family parametrically")
+def solidworks_parametric_prompt(requirements: str) -> str:
+    """Drive a part family via material, equations, dimensions, configurations."""
+    return (
+        "You are driving a parametric part family through solidworks-mcp.\n"
+        "Workflow: open or build the base part, then solidworks_part_set_material "
+        "(Chinese library names, e.g. 合金钢), solidworks_part_add_equation to "
+        "link dimensions parametrically (e.g. Height = 2 * Thickness), "
+        "solidworks_dimension_set to drive one driving dimension per variant, "
+        "and solidworks_part_add_configuration to snapshot each family member; "
+        "activate the next configuration and repeat the dimension edits. "
+        "Verify every variant with solidworks_part_get_mass_properties and "
+        "export with solidworks_file_export_step. All lengths are "
+        "millimeters.\n\n"
+        f"Part family requirements:\n{requirements}"
     )
 
 
@@ -729,7 +776,7 @@ def solidworks_drawing_create_from_part(
     part_path: NonEmptyString,
     launch_if_needed: Optional[bool] = None,
 ) -> ToolResult:
-    """Create a drawing (GB A3 template) from a saved part and project three views."""
+    """Create a drawing (GB A3 template) from a saved part and project three views. The part must be saved before creating the drawing; close the drawing (solidworks_file_close) when done to release file locks."""
     return _call_connected(
         lambda sw: create_drawing_from_part(sw, part_path),
         launch_if_needed,
@@ -894,7 +941,7 @@ def solidworks_design_execute_plan(
     overwrite_confirm: bool = False,
     launch_if_needed: Optional[bool] = None,
 ) -> ToolResult:
-    """Execute ordered new_part, box, plate, cylinder, and hole operations."""
+    """Execute ordered design operations: new_part, box, plate, cylinder, cone, hole, threaded_hole, annular_pattern."""
     return _call_connected(
         lambda sw: execute_design_plan(
             sw, operations, save_path, overwrite_confirm
@@ -980,7 +1027,7 @@ def solidworks_features_get_details(
     feature_name: Optional[str] = None,
     launch_if_needed: Optional[bool] = None,
 ) -> ToolResult:
-    """Type, dimensions (mm), and suppression per feature; null describes all."""
+    """Type, dimensions (mm), and suppression per feature; null describes all. Large models require one COM round-trip per feature; expect slower responses on 1000+ feature parts."""
     return _call_connected(
         lambda sw: get_feature_details(sw, feature_name),
         launch_if_needed,
@@ -1038,7 +1085,7 @@ def solidworks_part_list_faces(
     name_prefix: str = "Face",
     launch_if_needed: Optional[bool] = None,
 ) -> ToolResult:
-    """Enumerate solid faces (type/area mm2); unnamed faces get stable entity names for mating."""
+    """Enumerate solid faces (type/area mm2); unnamed faces get stable entity names for mating. Large models require one COM round-trip per face; expect slower responses on 1000+ face parts."""
     return _call_connected(
         lambda sw: list_faces(sw, name_prefix),
         launch_if_needed,
@@ -1112,7 +1159,7 @@ def solidworks_assembly_add_mate(
     entity2_type: EntityType = "AUTO",
     launch_if_needed: Optional[bool] = None,
 ) -> ToolResult:
-    """Add a basic mate; AUTO tries face, plane, axis, edge, then vertex."""
+    """Add a basic mate; AUTO tries face, plane, axis, edge, then vertex. distance is millimeters for distance mates and degrees for angle mates; entities are component-qualified names from list_components/list_faces."""
     return _call_connected(
         lambda sw: add_mate(
             sw,
