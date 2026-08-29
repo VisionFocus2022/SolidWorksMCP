@@ -13,6 +13,10 @@ venv/
 .coverage
 .pytest_cache/
 htmlcov/
+pytest_report.xml
+
+# Review-tool scratch output
+.reports/
 
 # Logs
 *.log
@@ -25,6 +29,9 @@ output/
 
 # SolidWorks lock files
 ~$*
+
+# Local CodeGraph index
+.codegraph/
 
 # Independent nested project with its own repository
 aicad/
