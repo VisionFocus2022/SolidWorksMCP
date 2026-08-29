@@ -6,7 +6,7 @@
 
 ## 主要能力
 
-- 使用官方 Python MCP SDK，通过 stdio 提供 53 个 tools、3 个 resources、3 个 prompts
+- 使用官方 Python MCP SDK，通过 stdio 提供 54 个 tools、3 个 resources、3 个 prompts
 - 连接正在运行的 SolidWorks，或在明确允许时自动启动
 - 新建零件，创建板件、块体、圆柱体和圆孔
 - 生成 9 行球形穹顶环形灯零件（产品专用工具，代码位于 solidworks_mcp/examples/）
