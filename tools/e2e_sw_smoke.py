@@ -219,6 +219,31 @@ def main() -> int:
         e2e.steps.append({"name": "drawing.cleanup", "success": False,
                           "error": {"code": "EXCEPTION", "details": repr(exc)}})
 
+    # --- 钣金链（T21-3）：基体法兰 → 特征树 + bbox 断言 ---
+    from solidworks_mcp.solidworks_api import sheet_metal
+
+    sm_path = str(WORK_DIR / "e2e_flange.SLDPRT")
+    e2e.step("sheet_metal.base_flange", sheet_metal.create_base_flange,
+             sw, 60.0, 40.0, 2.0, 0.0, sm_path, True)
+    sm_details = e2e.step("sheet_metal.get_details", features.get_feature_details, sw)
+    sm_names = [f["name"] for f in (sm_details.get("data") or {}).get("features") or []]
+    has_sm = any(("钣金" in n or "基体-法兰" in n or "平展" in n) for n in sm_names)
+    e2e.steps.append({"name": "sheet_metal.expect_features", "success": has_sm,
+                      "error": None if has_sm else {"code": "NO_SHEET_METAL",
+                                                    "details": sm_names[-6:]}})
+    sm_bb = e2e.step("sheet_metal.get_bbox", measure.get_bounding_box, sw)
+    sm_size = (sm_bb.get("data") or {}).get("size_mm")
+    e2e.steps.append({"name": "sheet_metal.expect_bbox",
+                      "success": sm_size == [60.0, 2.0, 40.0],
+                      "error": None if sm_size == [60.0, 2.0, 40.0]
+                      else {"code": "BBOX_MISMATCH", "details": sm_size}})
+    try:
+        sw.app.CloseAllDocuments(True)
+        e2e.steps.append({"name": "sheet_metal.cleanup", "success": True})
+    except Exception as exc:
+        e2e.steps.append({"name": "sheet_metal.cleanup", "success": False,
+                          "error": {"code": "EXCEPTION", "details": repr(exc)}})
+
     # --- CSG 重建链（T16）：契约示例 → 4 特征 → bbox 断言 ---
     from solidworks_mcp.solidworks_api import design as design_api
 

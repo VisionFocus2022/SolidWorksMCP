@@ -47,6 +47,7 @@ from solidworks_mcp.solidworks_api.file_io import (
     open_document,
 )
 from solidworks_mcp.solidworks_api.topology import list_bodies, list_faces
+from solidworks_mcp.solidworks_api.sheet_metal import create_base_flange
 from solidworks_mcp.solidworks_api.decorations import (
     apply_chamfer,
     apply_fillet,
@@ -659,6 +660,25 @@ def solidworks_part_add_configuration(
     """Add a derived configuration to the active document."""
     return _call_connected(
         lambda sw: add_configuration(sw, name),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Sheet-metal base flange", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_sheet_metal_base_flange(
+    width: PositiveMM,
+    depth: PositiveMM,
+    thickness: PositiveMM,
+    radius: float = 0.0,
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Create a sheet-metal part from a centred rectangular base flange (GB, flat v1)."""
+    return _call_connected(
+        lambda sw: create_base_flange(
+            sw, width, depth, thickness, radius, save_path, overwrite_confirm
+        ),
         launch_if_needed,
     )
 

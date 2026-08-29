@@ -15,6 +15,7 @@
 | probe_front_blind_bands.py | 前视盲孔/深度带 | 前视面上盲孔的深度-平面映射 | 治理期 |
 | probe_hole_plane_context.py | 孔-平面上下文 | cut 特征的平面上下文选择 | 治理期 |
 | probe_imported_annular_cut.py | 导入体环形切除 | STEP 导入体上的 annular cut | 治理期 |
+| probe_sheet_metal_thread.py | 钣金基体法兰/真实螺纹 | BaseFlange 16 参（PCBA=Nothing）；InsertHelix 10 参 def=0 可建可选中（REFERENCECURVES）但 InsertCutSwept4 三形态零产出 BLOCKED | T21 |
 
 ## probe_assembly/ — 装配域
 
