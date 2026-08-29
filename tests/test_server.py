@@ -19,7 +19,7 @@ class TestServerRegistration(unittest.TestCase):
         tools = mcp._tool_manager.list_tools()
         resources = mcp._resource_manager.list_resources()
         prompts = mcp._prompt_manager.list_prompts()
-        self.assertEqual(len(tools), 35)
+        self.assertEqual(len(tools), 36)
         self.assertEqual(len(resources), 3)
         self.assertEqual(len(prompts), 1)
 

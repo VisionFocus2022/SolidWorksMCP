@@ -37,7 +37,11 @@ from solidworks_mcp.solidworks_api.file_io import (
     open_document,
 )
 from solidworks_mcp.solidworks_api.topology import list_bodies, list_faces
-from solidworks_mcp.solidworks_api.decorations import apply_chamfer, apply_fillet
+from solidworks_mcp.solidworks_api.decorations import (
+    apply_chamfer,
+    apply_fillet,
+    apply_shell,
+)
 from solidworks_mcp.solidworks_api.measure import get_bounding_box, measure_distance
 from solidworks_mcp.solidworks_api.part import (
     create_box,
@@ -499,6 +503,19 @@ def solidworks_part_apply_chamfer(
     """Chamfer all edges of the named faces by distance and angle (0<angle<90)."""
     return _call_connected(
         lambda sw: apply_chamfer(sw, face_names, distance_mm, angle_deg),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Shell part", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_apply_shell(
+    face_names: List[NonEmptyString],
+    thickness_mm: PositiveMM,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Hollow the part keeping thickness_mm walls; the named faces are removed."""
+    return _call_connected(
+        lambda sw: apply_shell(sw, face_names, thickness_mm),
         launch_if_needed,
     )
 

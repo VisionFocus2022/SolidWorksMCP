@@ -90,6 +90,58 @@ def apply_fillet(
         return error_response(f"Failed to apply fillet: {exc}")
 
 
+def apply_shell(
+    sw_app: SolidWorksApp,
+    face_names: Sequence[str],
+    thickness_mm: float,
+) -> dict:
+    """Hollow the solid, removing the named faces and keeping the given wall
+    thickness (mm). Like the other decorations the API returns None; a new
+    feature in the tree is the success criterion (T8 probe: 60x40x20 box
+    shelled at 2mm with one 2400mm2 face removed -> 11712 mm3, exact).
+    """
+    try:
+        thickness_mm = positive_number("thickness_mm", thickness_mm)
+        if not face_names:
+            return error_response("face_names must be non-empty", code="INVALID_PARAMETER")
+
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+
+        selected, missing = _select_named_faces(model, face_names)
+        if missing:
+            return error_response(
+                f"Face(s) not found: {', '.join(missing)}",
+                code="INVALID_PARAMETER",
+            )
+
+        before = latest_feature_name(model)
+        model.InsertFeatureShell(mm_to_m(thickness_mm), False)
+        after = latest_feature_name(model)
+        if after == before:
+            return error_response(
+                f"SolidWorks rejected the shell ({thickness_mm}mm on "
+                f"{selected} removal face(s))",
+                code="SW_API_ERROR",
+            )
+
+        return success_response(
+            data={"feature_name": after, "faces": list(face_names)},
+            message=(
+                f"Shelled part with {thickness_mm}mm walls, removing "
+                f"{selected} face(s): {after}"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to apply shell")
+        return error_response(f"Failed to apply shell: {exc}")
+
+
 def apply_chamfer(
     sw_app: SolidWorksApp,
     face_names: Sequence[str],

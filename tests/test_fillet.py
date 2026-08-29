@@ -6,7 +6,11 @@ import math
 import unittest
 from unittest.mock import Mock
 
-from solidworks_mcp.solidworks_api.decorations import apply_chamfer, apply_fillet
+from solidworks_mcp.solidworks_api.decorations import (
+    apply_chamfer,
+    apply_fillet,
+    apply_shell,
+)
 
 
 class Face:
@@ -53,6 +57,7 @@ class DecorationModel:
         self.clear_calls = 0
         self.fillet_args = None
         self.chamfer_args = None
+        self.shell_args = None
 
     def GetBodies2(self, body_type, visible_only):
         return (Body(self._faces),)
@@ -75,6 +80,12 @@ class DecorationModel:
     def FeatureChamfer(self, width, angle, flip):
         self.chamfer_args = (width, angle, flip)
         self._tail._next = Feature("倒角1")
+        self._tail = self._tail._next
+        return None
+
+    def InsertFeatureShell(self, thickness, outward):
+        self.shell_args = (thickness, outward)
+        self._tail._next = Feature("抽壳1")
         self._tail = self._tail._next
         return None
 
@@ -181,6 +192,47 @@ class TestApplyChamfer(unittest.TestCase):
         sw = Mock()
         sw.get_active_document.side_effect = RuntimeError("COM failed")
         self.assertFalse(apply_chamfer(sw, ["Face0"], 2.0)["success"])
+
+
+class TestApplyShell(unittest.TestCase):
+    def test_shells_with_removal_faces_and_thickness_in_metres(self):
+        model = _model()
+        sw = Mock()
+        sw.get_active_document.return_value = model
+
+        result = apply_shell(sw, ["Face1"], 2.0)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["feature_name"], "抽壳1")
+        self.assertEqual(model.shell_args, (0.002, False))
+        self.assertEqual(model.clear_calls, 1)
+
+    def test_shell_validation_and_missing_faces(self):
+        sw = Mock()
+        sw.get_active_document.return_value = _model()
+        for bad in (0, -1, float("nan")):
+            self.assertEqual(
+                apply_shell(sw, ["Face0"], bad)["error"]["code"],
+                "INVALID_PARAMETER",
+            )
+        self.assertEqual(
+            apply_shell(sw, [], 2.0)["error"]["code"], "INVALID_PARAMETER"
+        )
+        self.assertEqual(
+            apply_shell(sw, ["Nope"], 2.0)["error"]["code"], "INVALID_PARAMETER"
+        )
+
+    def test_rejected_shell_and_com_errors_are_structured(self):
+        model = _model()
+        model.InsertFeatureShell = lambda *a: None  # no feature created
+        sw = Mock()
+        sw.get_active_document.return_value = model
+        result = apply_shell(sw, ["Face0"], 2.0)
+        self.assertFalse(result["success"])
+        self.assertIn("rejected", result["message"])
+
+        sw.get_active_document.side_effect = RuntimeError("COM failed")
+        self.assertFalse(apply_shell(sw, ["Face0"], 2.0)["success"])
 
 
 if __name__ == "__main__":

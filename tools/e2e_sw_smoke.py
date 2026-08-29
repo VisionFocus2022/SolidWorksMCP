@@ -133,7 +133,9 @@ def main() -> int:
     ring_faces = [f["name"] for f in (listing.get("data") or {}).get("faces") or []]
     if len(ring_faces) >= 2:
         e2e.step("decorations.apply_fillet", decorations.apply_fillet, sw, ring_faces[:2], 2.0)
-        e2e.step("decorations.apply_chamfer", decorations.apply_chamfer, sw, ring_faces[:1], 1.0)
+        # 倒角用未圆角的面：已圆角面的边无直边可倒，SW 会拒绝（e2e 实证）
+        e2e.step("decorations.apply_chamfer", decorations.apply_chamfer, sw, ring_faces[-1:], 1.0)
+        e2e.step("decorations.apply_shell", decorations.apply_shell, sw, ring_faces[1:2], 2.0)
     else:
         e2e.steps.append({"name": "decorations.chain", "success": False,
                           "error": {"code": "NO_FACES", "details": None}})
