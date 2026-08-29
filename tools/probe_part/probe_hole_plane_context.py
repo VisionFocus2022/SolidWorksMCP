@@ -15,7 +15,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from solidworks_mcp.solidworks_api.app import get_solidworks_app
 from solidworks_mcp.solidworks_api.design import (
@@ -26,7 +26,7 @@ from solidworks_mcp.solidworks_api.design import (
 from solidworks_mcp.solidworks_api.file_io import export_step
 from solidworks_mcp.solidworks_api.part import create_cylinder
 
-OUT = Path(__file__).resolve().parents[1] / "output"
+OUT = Path(__file__).resolve().parents[2] / "output"
 
 HOLE = {"type": "hole", "diameter": 6.0, "x": 15.0, "y": 0.0,
         "plane": "top", "through_all": True}

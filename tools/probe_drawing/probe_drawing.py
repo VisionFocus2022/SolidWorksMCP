@@ -22,7 +22,7 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import pythoncom
 from win32com.client import VARIANT
@@ -32,7 +32,7 @@ from solidworks_mcp.solidworks_api.app import get_solidworks_app
 from solidworks_mcp.solidworks_api.constants import swSaveAsOptions_Silent
 from solidworks_mcp.utils.com import call_or_value
 
-OUT_DIR = Path(__file__).resolve().parents[1] / "output" / "e2e-work"
+OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "e2e-work"
 
 MAX_VIEWS = 50
 MAX_DIMS_PER_VIEW = 200

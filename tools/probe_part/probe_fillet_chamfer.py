@@ -16,7 +16,7 @@ import math
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from solidworks_mcp.solidworks_api import design, file_io, part
 from solidworks_mcp.solidworks_api.app import get_solidworks_app

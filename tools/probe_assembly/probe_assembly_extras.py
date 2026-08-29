@@ -18,7 +18,7 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import pythoncom
 from win32com.client import VARIANT
@@ -28,7 +28,7 @@ from solidworks_mcp.solidworks_api.app import get_solidworks_app
 from solidworks_mcp.utils.com import call_or_value
 from solidworks_mcp.utils.templates import get_assembly_template
 
-OUT_DIR = Path(__file__).resolve().parents[1] / "output" / "e2e-work"
+OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "e2e-work"
 
 # swMateType_e 候选（swconst，typelib 无此枚举）
 CAND_TANGENT, CAND_ANGLE, CAND_WIDTH = 4, 6, 17
