@@ -342,8 +342,51 @@ def solidworks_design_part_prompt(requirements: str) -> str:
         "dimensions, planes, feature names, or overwrite approval. If required "
         "geometry is unsupported, explain the exact missing operation and ask only "
         "for the parameter needed to continue. Verify the result with feature and "
-        "mass-property tools before export.\n\n"
+        "mass-property tools before export.\n"
+        "Perception workflow for refinement rounds: "
+        "solidworks_features_get_details lists every feature with its dimensions in "
+        "mm; solidworks_dimension_set edits one (angles unsupported), "
+        "solidworks_feature_delete removes one; solidworks_get_bounding_box and "
+        "solidworks_measure_distance verify extents; solidworks_part_list_faces "
+        "gives named faces for solidworks_part_apply_fillet/_chamfer/_shell; "
+        "solidworks_part_set_material attaches a material (Chinese library names, "
+        "e.g. 合金钢) and add_equation links dimensions parametrically.\n\n"
         f"Design requirements:\n{requirements}"
+    )
+
+
+@mcp.prompt(title="Assemble parts with mates")
+def solidworks_assembly_prompt(requirements: str) -> str:
+    """Guide mating components in an assembly via named entities."""
+    return (
+        "You are assembling components in SolidWorks through solidworks-mcp.\n"
+        "Workflow: solidworks_assembly_new creates the assembly (optionally saving "
+        "it), then solidworks_assembly_add_component inserts each saved part "
+        "(millimetre coordinates). Before mating, run solidworks_part_list_faces "
+        "on the referenced parts to obtain stable face names (Face0, Face1, ...). "
+        "solidworks_assembly_add_mate then mates two component-qualified entities "
+        "(e.g. \"Face2@box-1\" and \"Face0@cyl-1\") — entity names must carry the "
+        "component instance and are matched as \"<name>@<assembly title>\" first. "
+        "Verify with solidworks_assembly_check_interference (empty means no "
+        "collisions) and solidworks_assembly_get_bom for the part list. "
+        "All lengths are millimetres.\n\n"
+        f"Assembly requirements:\n{requirements}"
+    )
+
+
+@mcp.prompt(title="Create a drawing from a part")
+def solidworks_drawing_prompt(requirements: str) -> str:
+    """Guide producing a dimensioned drawing sheet from a saved part."""
+    return (
+        "You are producing an engineering drawing through solidworks-mcp.\n"
+        "Workflow: solidworks_drawing_create_from_part takes a SAVED .sldprt path "
+        "and creates a GB A3 sheet with three projected views (the referenced "
+        "part is opened automatically). Then solidworks_drawing_insert_dimensions "
+        "pulls the model's dimensions into the views. Export with "
+        "solidworks_drawing_export_pdf and solidworks_drawing_export_png (paths "
+        "under allowed_root; overwrite needs confirmation). The drawing holds the "
+        "part open afterwards — close documents when done.\n\n"
+        f"Drawing requirements:\n{requirements}"
     )
 
 

@@ -41,3 +41,20 @@ SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS (default off; timeout poisons executor → SW
 
 solidworks_mcp/server.py (679, registration) · solidworks_api/pattern.py (348) ·
 solidworks_api/design.py (317) · tests/test_pattern.py, test_infrastructure.py, test_hardening.py (contract+security locks)
+
+
+## 2026-08-30 二期优化新增（T3-T18）
+
+solidworks_api/topology.py（实体/面枚举+命名，SetEntityName 宿主 ModelDoc2）·
+measure.py（包围盒/两点距离，GetBodyBox）·
+decorations.py（圆角/倒角/抽壳，legacy 全值 API——variant 数组编组不稳）·
+features.py 扩展（特征详情/尺寸读写/删除，GetSystemValue3 米制契约）·
+part.py（revolve/堆叠原语 create_cylinder_on_face——顶面 GetBox 走查）·
+design.py（事务性计划回滚 + rebuild_csg_plan 跨引擎契约）·
+properties.py（材料/自定义属性/方程式/配置，byref VARIANT 铁律）·
+drawing.py（GB 模板建图/手动三视图/InsertModelAnnotations2/导 PDF+PNG）·
+assembly.py 扩展（新建装配/干涉检查/BOM/mate 6 类型）
+
+server.py 现注册 53 tools / 3 prompts；测试基线 356 passed + 79 subtests，
+覆盖率 ≥89%（红线），记忆守卫套件 test_memory_guard.py（裸 Mock 哨兵）。
+契约文档：docs/csg-plan-v1.md（跨引擎 CSG v1）。
