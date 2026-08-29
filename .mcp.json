@@ -9,7 +9,8 @@
       "env": {
         "SOLIDWORKS_MCP_ALLOWED_ROOT": "E:\\SolidWorks 2026\\SolidWorksMCP",
         "SOLIDWORKS_MCP_SOLIDWORKS_VERSION": "2026",
-        "SOLIDWORKS_MCP_AUTO_START": "false"
+        "SOLIDWORKS_MCP_AUTO_START": "false",
+        "SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS": "120"
       }
     }
   }
