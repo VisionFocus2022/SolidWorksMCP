@@ -7,7 +7,11 @@ import math
 from typing import Any, Dict, List, Sequence, Tuple
 
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
-from solidworks_mcp.solidworks_api.geometry import latest_feature_name, mm_to_m
+from solidworks_mcp.solidworks_api.geometry import (
+    MAX_FEATURE_WALK,
+    latest_feature_name,
+    mm_to_m,
+)
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
 from solidworks_mcp.utils.validation import finite_number, positive_number
@@ -29,12 +33,18 @@ def _select_named_faces(model: Any, face_names: Sequence[str]) -> Tuple[int, Lis
     selected = 0
     for body in model.GetBodies2(SW_SOLID_BODY, False) or ():
         face = call_or_value(body, "GetFirstFace")
-        while face is not None:
+        walked = 0
+        while face is not None and walked < MAX_FEATURE_WALK:
             name = model.GetEntityName(face)
+            # Scalar sentinel (T10 incident): real names are always
+            # strings; mock chains cost O(n^2) per walk step.
+            if not isinstance(name, str):
+                break
             if name in wanted:
                 if face.Select2(True, 1):
                     selected += 1
                 wanted.remove(name)
+            walked += 1
             face = call_or_value(face, "GetNextFace")
     return selected, wanted
 

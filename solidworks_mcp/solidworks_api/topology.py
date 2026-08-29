@@ -32,6 +32,10 @@ def _count_faces(body: Any) -> int:
     count = 0
     face = call_or_value(body, "GetFirstFace")
     while face is not None and count < MAX_FEATURE_WALK:
+        # Scalar sentinel (T10 incident): stop on a non-numeric area — a
+        # real face always reports a float; mock chains cost O(n^2)/step.
+        if not isinstance(call_or_value(face, "GetArea"), (int, float)):
+            break
         count += 1
         face = call_or_value(face, "GetNextFace")
     return count
@@ -85,6 +89,10 @@ def list_faces(sw_app: SolidWorksApp, name_prefix: str = "Face") -> dict:
             walked = 0
             while face is not None and walked < MAX_FEATURE_WALK:
                 name = model.GetEntityName(face)
+                # Scalar sentinel (T10 incident): real names are always
+                # strings; mock chains cost O(n^2) per walk step.
+                if not isinstance(name, str):
+                    break
                 if not name:
                     candidate = f"{name_prefix}{counter}"
                     if model.SetEntityName(face, candidate):

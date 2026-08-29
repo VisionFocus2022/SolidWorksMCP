@@ -30,24 +30,23 @@ def linspace(start: float, end: float, count: int) -> List[float]:
     return [start + (end - start) * i / (count - 1) for i in range(count)]
 
 
-def walk_feature_names(model: Any, max_features: int = MAX_FEATURE_WALK) -> List[str]:
-    """Walk the feature tree in order and return the feature names.
+def walk_features(model: Any, max_features: int = MAX_FEATURE_WALK):
+    """Yield feature objects in tree order.
 
-    The walk is bounded by ``max_features`` so a non-terminating
-    GetNextFeature chain degrades into a warning instead of unbounded
-    memory growth. A feature whose ``Name`` is not a string (e.g. a test
-    double or degenerate proxy) stops the walk immediately: real feature
-    names are always strings, and walking mock objects costs quadratic
-    call-bookkeeping (T10 memory-explosion incident).
+    The walk is bounded by ``max_features`` and stops immediately on a
+    feature whose ``Name`` is not a string (a test double or degenerate
+    proxy — real feature names are always strings). Without the guard,
+    mock objects cost quadratic call-bookkeeping per step: the T10
+    incident turned a "bounded" 5000-step loop into gigabytes of memory.
     """
-    names: List[str] = []
+    count = 0
     feat = call_or_value(model, "FirstFeature")
     while feat is not None:
-        name = getattr(feat, "Name", None)
-        if not isinstance(name, str):
+        if not isinstance(getattr(feat, "Name", None), str):
             break
-        names.append(name)
-        if len(names) >= max_features:
+        yield feat
+        count += 1
+        if count >= max_features:
             logger.warning(
                 "Feature walk hit the %s-step ceiling; the model or proxy "
                 "may be degenerate.",
@@ -55,11 +54,15 @@ def walk_feature_names(model: Any, max_features: int = MAX_FEATURE_WALK) -> List
             )
             break
         feat = call_or_value(feat, "GetNextFeature")
-    return names
+
+
+def walk_feature_names(model: Any, max_features: int = MAX_FEATURE_WALK) -> List[str]:
+    """Walk the feature tree in order and return the feature names."""
+    return [feat.Name for feat in walk_features(model, max_features)]
 
 
 def latest_feature_name(model: Any, max_features: int = MAX_FEATURE_WALK) -> Optional[str]:
-    """Return the name of the last feature in the tree (see walk_feature_names)."""
+    """Return the name of the last feature in the tree (see walk_features)."""
     names = walk_feature_names(model, max_features)
     return names[-1] if names else None
 

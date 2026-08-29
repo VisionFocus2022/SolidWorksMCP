@@ -12,7 +12,11 @@ from solidworks_mcp.solidworks_api.constants import (
     swFeatureSuppressed,
     swFeatureUnsuppressed,
 )
-from solidworks_mcp.solidworks_api.geometry import MAX_FEATURE_WALK, mm_to_m
+from solidworks_mcp.solidworks_api.geometry import (
+    MAX_FEATURE_WALK,
+    mm_to_m,
+    walk_features,
+)
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
 from solidworks_mcp.utils.validation import positive_number
@@ -22,20 +26,10 @@ logger = logging.getLogger(__name__)
 
 def _find_feature(model: Any, feature_name: str) -> Optional[Any]:
     """Find a feature by name in the feature tree."""
-    feat = _first_feature(model)
-    while feat is not None:
+    for feat in walk_features(model):
         if feat.Name == feature_name:
             return feat
-        feat = _next_feature(feat)
     return None
-
-
-def _first_feature(model: Any) -> Optional[Any]:
-    return call_or_value(model, "FirstFeature")
-
-
-def _next_feature(feature: Any) -> Optional[Any]:
-    return call_or_value(feature, "GetNextFeature")
 
 
 def rename_feature(
@@ -118,11 +112,7 @@ def get_features(sw_app: SolidWorksApp) -> dict:
         if model is None:
             return error_response("No active document")
 
-        names = []
-        feat = _first_feature(model)
-        while feat is not None:
-            names.append(feat.Name)
-            feat = _next_feature(feat)
+        names = [feat.Name for feat in walk_features(model)]
 
         return success_response(
             data={"features": names, "count": len(names)},
@@ -150,16 +140,12 @@ def get_feature_details(
             return error_response("No active document")
 
         details: List[Dict[str, Any]] = []
-        steps = 0
-        feat = _first_feature(model)
-        while feat is not None and steps < MAX_FEATURE_WALK:
+        for feat in walk_features(model):
             name = feat.Name
             if feature_name is None or name == feature_name:
                 details.append(_describe_feature(feat, name))
                 if feature_name is not None:
                     break
-            steps += 1
-            feat = _next_feature(feat)
 
         if feature_name is not None and not details:
             return error_response(f"Feature not found: {feature_name}")
@@ -220,6 +206,10 @@ def _feature_dimensions(feat: Any) -> List[Dict[str, Any]]:
     while disp is not None and steps < MAX_FEATURE_WALK:
         try:
             dim = disp.GetDimension2(0)
+            # Guard against degenerate proxies (T10 incident): mock chains
+            # cost O(n^2) per step; real dimension names are always strings.
+            if not isinstance(getattr(dim, "FullName", None), str):
+                break
             value_m = _system_value_m(dim.GetSystemValue3(1, ""))  # metres
             dims.append({
                 "full_name": dim.FullName,
@@ -340,9 +330,4 @@ def delete_feature(sw_app: SolidWorksApp, feature_name: str) -> dict:
 
 
 def _feature_count(model: Any) -> int:
-    count = 0
-    feat = _first_feature(model)
-    while feat is not None and count < MAX_FEATURE_WALK:
-        count += 1
-        feat = _next_feature(feat)
-    return count
+    return sum(1 for _feat in walk_features(model))
