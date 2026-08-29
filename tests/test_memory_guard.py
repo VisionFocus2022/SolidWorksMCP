@@ -22,6 +22,11 @@ from solidworks_mcp.solidworks_api.decorations import (
     apply_shell,
 )
 from solidworks_mcp.solidworks_api.design import execute_design_plan
+from solidworks_mcp.solidworks_api.drawing import (
+    create_drawing_from_part,
+    export_drawing_pdf,
+    insert_model_dimensions,
+)
 from solidworks_mcp.solidworks_api.features import (
     delete_feature,
     get_feature_details,
@@ -130,6 +135,20 @@ class TestBareMockTolerance(unittest.TestCase):
             )
         self.assertFalse(result["success"])
 
+    def test_drawing_entry_points(self):
+        # create bails at path validation; insert bails at the doc-type check
+        # or the view-walk str sentinel; export bails at SaveAs3 != 0.
+        sw = Mock()
+        sw.get_active_document.return_value.GetType.return_value = 3
+        for call in (
+            lambda: create_drawing_from_part(sw, "missing.SLDPRT"),
+            lambda: insert_model_dimensions(sw),
+            lambda: export_drawing_pdf(sw, "x.pdf"),
+        ):
+            result = call()
+            self.assertIsInstance(result, dict)
+            self.assertIn("success", result)
+
     def test_memory_delta_stays_bounded(self):
         """The whole battery must not move the process RSS measurably."""
         before = _rss_mb()
@@ -137,6 +156,7 @@ class TestBareMockTolerance(unittest.TestCase):
         self.test_iterable_mock_bodies_do_not_explode()
         self.test_dimension_walk_stops_on_non_string_full_name()
         self.test_plan_failure_path_on_mock_document()
+        self.test_drawing_entry_points()
         delta = _rss_mb() - before
         self.assertLess(
             delta,

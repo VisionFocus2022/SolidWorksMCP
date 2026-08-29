@@ -44,6 +44,12 @@ from solidworks_mcp.solidworks_api.decorations import (
     apply_fillet,
     apply_shell,
 )
+from solidworks_mcp.solidworks_api.drawing import (
+    create_drawing_from_part,
+    export_drawing_pdf,
+    export_drawing_png,
+    insert_model_dimensions,
+)
 from solidworks_mcp.solidworks_api.measure import get_bounding_box, measure_distance
 from solidworks_mcp.solidworks_api.part import (
     create_box,
@@ -600,6 +606,52 @@ def solidworks_part_add_configuration(
     """Add a derived configuration to the active document."""
     return _call_connected(
         lambda sw: add_configuration(sw, name),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Create drawing from part", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_drawing_create_from_part(
+    part_path: NonEmptyString,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Create a drawing (GB A3 template) from a saved part and project three views."""
+    return _call_connected(
+        lambda sw: create_drawing_from_part(sw, part_path),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Insert model dimensions", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_drawing_insert_dimensions(
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Insert the model's dimensions into the active drawing's views."""
+    return _call_connected(insert_model_dimensions, launch_if_needed)
+
+
+@mcp.tool(title="Export drawing PDF", annotations=IDEMPOTENT_WRITE, structured_output=True)
+def solidworks_drawing_export_pdf(
+    file_path: NonEmptyString,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Export the active drawing to PDF under allowed_root."""
+    return _call_connected(
+        lambda sw: export_drawing_pdf(sw, file_path, overwrite_confirm),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Export drawing PNG", annotations=IDEMPOTENT_WRITE, structured_output=True)
+def solidworks_drawing_export_png(
+    file_path: NonEmptyString,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Export the active drawing sheet to PNG (raster) under allowed_root."""
+    return _call_connected(
+        lambda sw: export_drawing_png(sw, file_path, overwrite_confirm),
         launch_if_needed,
     )
 

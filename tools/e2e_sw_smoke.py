@@ -187,6 +187,21 @@ def main() -> int:
         e2e.steps.append({"name": "assembly.chain", "success": True, "skipped": True,
                           "note": "无活动装配文档且无新建装配 API（T11 将补 create_assembly）"})
 
+    # --- 工程图链（T12）：建图→投三视图→入尺寸→导 PDF/PNG---
+    from solidworks_mcp.solidworks_api import drawing as drawing_api
+
+    e2e.step("drawing.create_from_part", drawing_api.create_drawing_from_part, sw, box_path)
+    e2e.step("drawing.insert_dimensions", drawing_api.insert_model_dimensions, sw)
+    e2e.step("drawing.export_pdf", drawing_api.export_drawing_pdf, sw, str(WORK_DIR / "e2e_box_drawing.pdf"), True)
+    e2e.step("drawing.export_png", drawing_api.export_drawing_png, sw, str(WORK_DIR / "e2e_box_drawing.png"), True)
+    # 工程图会隐式打开引用零件（文件锁），收尾必须全量释放
+    try:
+        sw.app.CloseAllDocuments(True)
+        e2e.steps.append({"name": "drawing.cleanup", "success": True})
+    except Exception as exc:
+        e2e.steps.append({"name": "drawing.cleanup", "success": False,
+                          "error": {"code": "EXCEPTION", "details": repr(exc)}})
+
     e2e.write_report()
     return 1 if e2e.failed else 0
 
