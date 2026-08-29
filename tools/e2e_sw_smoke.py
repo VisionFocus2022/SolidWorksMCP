@@ -102,6 +102,7 @@ def main() -> int:
                           "error": {"code": "NO_FEATURES", "details": None}})
     e2e.step("design.cut_round_hole", design.cut_round_hole, sw, 8.0, 0.0, 0.0, "top", None, True)
     e2e.step("features.set_feature_suppression", features.set_feature_suppression, sw, "E2E_Boss", False)
+    e2e.step("features.get_feature_details", features.get_feature_details, sw)
     e2e.step("part.get_mass_properties", part.get_mass_properties, sw)
     e2e.step("file_io.export_step", file_io.export_step, sw, str(WORK_DIR / "e2e_box.step"), True)
     e2e.step("file_io.export_stl", file_io.export_stl, sw, str(WORK_DIR / "e2e_box.stl"), True)

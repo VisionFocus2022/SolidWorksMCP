@@ -24,6 +24,7 @@ from solidworks_mcp.solidworks_api.design import (
     execute_design_plan,
 )
 from solidworks_mcp.solidworks_api.features import (
+    get_feature_details,
     get_features,
     rename_feature,
     set_feature_suppression,
@@ -654,6 +655,18 @@ def solidworks_features_list(
 ) -> ToolResult:
     """List feature names in the active document."""
     return _call_connected(get_features, launch_if_needed)
+
+
+@mcp.tool(title="Get feature details", annotations=READ_ONLY, structured_output=True)
+def solidworks_features_get_details(
+    feature_name: Optional[str] = None,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Type, dimensions (mm), and suppression per feature; null describes all."""
+    return _call_connected(
+        lambda sw: get_feature_details(sw, feature_name),
+        launch_if_needed,
+    )
 
 
 @mcp.tool(title="Rename feature", annotations=DESTRUCTIVE, structured_output=True)
