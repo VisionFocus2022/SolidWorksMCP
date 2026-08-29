@@ -146,8 +146,12 @@ def close_document(sw_app: SolidWorksApp, save_changes: bool = False) -> dict:
                     code="SW_SAVE_FAILED",
                 )
 
-        closed = sw_app.app.CloseDoc(title)
-        if not closed:
+        # CloseDoc is a void COM method: dynamic dispatch returns None on
+        # success, so failure must be detected from a raised COM error,
+        # never from the (always falsy) return value.
+        try:
+            sw_app.app.CloseDoc(title)
+        except Exception:
             return error_response(
                 f"SolidWorks rejected closing document: {title}",
                 code="SW_API_ERROR",

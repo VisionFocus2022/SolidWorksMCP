@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
 from solidworks_mcp.solidworks_api.design import (
+    HOLE_PLANE_ALIASES,
     PLANE_ALIASES,
     _get_active_part,
     _save_active_model,
@@ -244,7 +245,9 @@ def create_annular_pattern(
         layout = build_annular_layout(rings, avoid_angles_degrees)
         model = _get_active_part(sw_app)
 
-        plane_names = PLANE_ALIASES.get(plane.lower(), [plane])
+        # Hole-plane semantics: "top" drills along Z through the +Z face
+        # (design.HOLE_PLANE_ALIASES), not SW's native Y-normal Top Plane.
+        plane_names = HOLE_PLANE_ALIASES.get(plane.lower(), [plane])
         selected_plane: Optional[str] = None
         nominal_depth = max(
             [10.0] + [row["diameter_mm"] for row in layout["rings"]]

@@ -19,13 +19,21 @@ class TestServerRegistration(unittest.TestCase):
         tools = mcp._tool_manager.list_tools()
         resources = mcp._resource_manager.list_resources()
         prompts = mcp._prompt_manager.list_prompts()
-        self.assertEqual(len(tools), 25)
+        self.assertEqual(len(tools), 27)
         self.assertEqual(len(resources), 3)
         self.assertEqual(len(prompts), 1)
 
     def test_advertised_tool_list_matches_registration(self):
         registered = [tool.name for tool in mcp._tool_manager.list_tools()]
         self.assertEqual(registered, _capabilities()["tools"])
+
+    def test_cone_and_threaded_hole_tools_are_registered(self):
+        cone = mcp._tool_manager.get_tool("solidworks_part_create_cone")
+        self.assertIsNotNone(cone)
+        self.assertIn("bottom_diameter", cone.parameters["properties"])
+        threaded = mcp._tool_manager.get_tool("solidworks_part_cut_threaded_hole")
+        self.assertIsNotNone(threaded)
+        self.assertIn("spec", threaded.parameters["properties"])
 
     def test_handshake_version_matches_package(self):
         self.assertEqual(mcp._mcp_server.version, __version__)

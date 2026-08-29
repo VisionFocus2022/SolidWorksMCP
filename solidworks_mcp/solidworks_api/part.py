@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Optional
 
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
@@ -12,12 +13,12 @@ from solidworks_mcp.solidworks_api.constants import (
     swSaveAsOptions_Silent,
 )
 from solidworks_mcp.solidworks_api.geometry import mm_to_m, select_plane
-from solidworks_mcp.solidworks_api.sketch import extrude_boss
+from solidworks_mcp.solidworks_api.sketch import extrude_boss, extrude_boss_draft
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
 from solidworks_mcp.utils.security import ensure_sink_path, validate_output_file
 from solidworks_mcp.utils.templates import get_part_template
-from solidworks_mcp.utils.validation import positive_number
+from solidworks_mcp.utils.validation import finite_number, positive_number
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,19 @@ def _create_rectangle_sketch(
 def _extrude_sketch(model: Any, height: float) -> Any:
     """Extrude the active sketch by the given height."""
     return extrude_boss(model, height)
+
+
+def _extrude_draft_sketch(
+    model: Any,
+    height_m: float,
+    draft_check: bool,
+    draft_outward: bool,
+    draft_angle_rad: float,
+) -> Any:
+    """Extrude the active sketch with a taper (draft slot of FeatureExtrusion2)."""
+    return extrude_boss_draft(
+        model, height_m, draft_check, draft_outward, draft_angle_rad
+    )
 
 
 def create_cylinder(
@@ -197,6 +211,91 @@ def create_box(
     except Exception as exc:
         logger.exception("Failed to create box")
         return error_response(f"Failed to create box: {exc}")
+
+
+def create_cone(
+    sw_app: SolidWorksApp,
+    bottom_diameter: float,
+    top_diameter: float,
+    height: float,
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+) -> dict:
+    """Create a cone/frustum from a bottom-radius circle with a drafted extrusion.
+
+    The draft form follows the real-machine contract probed on SW 2026:
+    the draft angle is ``atan2(|r_top - r_bottom|, height)`` in radians
+    and ``Ddir1`` widens the far end, so ``top_diameter > bottom_diameter``
+    grows an expanding frustum. ``top_diameter=0`` requests a pointed
+    cone (SolidWorks may refuse a fully degenerate apex; prefer a small
+    positive top diameter for machined parts).
+    """
+    try:
+        bottom_diameter = positive_number("bottom_diameter", bottom_diameter)
+        height = positive_number("height", height)
+        top_diameter = finite_number("top_diameter", top_diameter)
+        if top_diameter < 0:
+            return error_response(
+                "top_diameter must be a non-negative number",
+                code="INVALID_PARAMETER",
+            )
+        if save_path:
+            valid, message = validate_output_file(
+                save_path, {".sldprt"}, overwrite_confirm
+            )
+            if not valid:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+
+        model, _was_created = _get_or_create_part(sw_app)
+
+        plane_name = _select_plane(model)
+        if plane_name is None:
+            return error_response("Could not select a reference plane (tried: Front Plane, 前视基准面)")
+
+        radius = mm_to_m(bottom_diameter) / 2.0
+        height_m = mm_to_m(height)
+        r_bottom = bottom_diameter / 2.0
+        r_top = top_diameter / 2.0
+        draft_angle_rad = math.atan2(abs(r_top - r_bottom), height)
+        draft_check = top_diameter != bottom_diameter
+        draft_outward = r_top > r_bottom
+
+        _create_circle_sketch(model, radius)
+        feature = _extrude_draft_sketch(
+            model, height_m, draft_check, draft_outward, draft_angle_rad
+        )
+
+        if feature is None:
+            return error_response("Drafted extrusion feature creation failed")
+
+        result = {
+            "feature_name": feature.Name,
+            "draft_angle_degrees": round(math.degrees(draft_angle_rad), 4),
+        }
+
+        if save_path:
+            ok, message, sink_path = ensure_sink_path(save_path)
+            if not ok:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
+            if save_result != swFileSaveErrorNone:
+                return error_response(f"SaveAs3 failed with code {save_result}")
+            result["saved_to"] = save_path
+
+        return success_response(
+            data=result,
+            message=(
+                f"Created cone with bottom_diameter={bottom_diameter}mm, "
+                f"top_diameter={top_diameter}mm, height={height}mm"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to create cone")
+        return error_response(f"Failed to create cone: {exc}")
 
 
 def get_mass_properties(sw_app: SolidWorksApp) -> dict:

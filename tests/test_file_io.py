@@ -102,7 +102,7 @@ class TestCloseDocument(unittest.TestCase):
 
         model = SimpleNamespace(GetTitle=lambda: "P", Save3=lambda *a: True)
         sw.get_active_document.return_value = model
-        sw.app.CloseDoc.return_value = False
+        sw.app.CloseDoc.side_effect = OSError("rejected")
         self.assertEqual(close_document(sw)["error"]["code"], "SW_API_ERROR")
 
 

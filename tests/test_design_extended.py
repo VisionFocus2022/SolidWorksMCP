@@ -94,20 +94,24 @@ class TestRoundHole(unittest.TestCase):
         self.assertEqual(cut_round_hole(sw, 5, 0, 0, plane="")["error"]["code"], "INVALID_PARAMETER")
         self.assertEqual(cut_round_hole(sw, 5, 0, 0, through_all=False)["error"]["code"], "INVALID_PARAMETER")
 
-    @patch("solidworks_mcp.solidworks_api.design._select_plane", return_value=None)
+    # cut_round_hole resolves hole-plane aliases through _select_hole_plane
+    # (HOLE_PLANE_ALIASES); patching the legacy _select_plane is a no-op and
+    # once let the real path run against a bare Mock, whose feature tree
+    # never terminates (the 34.86 GB runaway repro).
+    @patch("solidworks_mcp.solidworks_api.design._select_hole_plane", return_value=None)
     @patch("solidworks_mcp.solidworks_api.design._get_active_part")
     def test_requires_selectable_plane(self, _part, _plane):
         self.assertFalse(cut_round_hole(Mock(), 5, 0, 0)["success"])
 
     @patch("solidworks_mcp.solidworks_api.design._latest_feature_name", return_value=None)
-    @patch("solidworks_mcp.solidworks_api.design._select_plane", return_value="Top Plane")
+    @patch("solidworks_mcp.solidworks_api.design._select_hole_plane", return_value="Front Plane")
     @patch("solidworks_mcp.solidworks_api.design._get_active_part")
     def test_requires_identifiable_sketch(self, get_part, _plane, _latest):
         get_part.return_value = Mock()
         self.assertFalse(cut_round_hole(Mock(), 5, 0, 0)["success"])
 
     @patch("solidworks_mcp.solidworks_api.design._latest_feature_name", return_value="Sketch2")
-    @patch("solidworks_mcp.solidworks_api.design._select_plane", return_value="Top Plane")
+    @patch("solidworks_mcp.solidworks_api.design._select_hole_plane", return_value="Front Plane")
     @patch("solidworks_mcp.solidworks_api.design._get_active_part")
     def test_creates_blind_hole_with_selection_fallback(self, get_part, _plane, _latest):
         model = Mock()
@@ -120,7 +124,7 @@ class TestRoundHole(unittest.TestCase):
         model.SketchManager.CreateCircleByRadius.assert_called_once_with(0.002, 0.003, 0, 0.005)
 
     @patch("solidworks_mcp.solidworks_api.design._latest_feature_name", return_value="Sketch2")
-    @patch("solidworks_mcp.solidworks_api.design._select_plane", return_value="Top Plane")
+    @patch("solidworks_mcp.solidworks_api.design._select_hole_plane", return_value="Front Plane")
     @patch("solidworks_mcp.solidworks_api.design._get_active_part")
     def test_reports_sketch_selection_and_cut_failure(self, get_part, _plane, _latest):
         model = Mock()

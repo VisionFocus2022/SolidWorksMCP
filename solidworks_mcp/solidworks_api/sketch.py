@@ -18,6 +18,27 @@ def extrude_boss(model: Any, height_m: float, reverse: bool = True) -> Any:
     )
 
 
+def extrude_boss_draft(
+    model: Any,
+    height_m: float,
+    draft_check: bool,
+    draft_outward: bool,
+    draft_angle_rad: float,
+) -> Any:
+    """Extrude the selected sketch with a taper (FeatureExtrusion2 draft slot).
+
+    Mirrors the real-machine contract verified by the aicad channel-B
+    probe on SW 2026: draft angles are RADIANS and ``Ddir1=True`` widens
+    the far end (a frustum whose top radius exceeds its bottom radius
+    extrudes as an expanding solid; volumes verified exact).
+    """
+    return model.FeatureManager.FeatureExtrusion2(
+        True, False, False, 0, 0, height_m, height_m,
+        draft_check, False, draft_outward, False, draft_angle_rad, 0.0,
+        False, False, False, False, True, True, True, 0, 0, False,
+    )
+
+
 def cut_feature(
     model: Any,
     reverse: bool,

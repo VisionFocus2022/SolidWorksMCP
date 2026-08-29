@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -13,6 +14,7 @@ from solidworks_mcp.solidworks_api.part import (
     _get_or_create_part,
     _select_plane,
     create_box,
+    create_cone,
     create_cylinder,
     get_mass_properties,
 )
@@ -98,6 +100,68 @@ class TestPartCreation(unittest.TestCase):
         self.assertTrue(result["success"])
         rectangle.assert_called_once_with(model, 0.04, 0.02)
         extrude.assert_called_once_with(model, 0.01)
+
+
+class TestConeCreation(unittest.TestCase):
+    @patch("solidworks_mcp.solidworks_api.part._extrude_draft_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._create_circle_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._select_plane", return_value="Front Plane")
+    @patch("solidworks_mcp.solidworks_api.part._get_or_create_part")
+    def test_create_cone_converts_units_and_derives_draft(
+        self, get_part, _plane, circle, extrude
+    ):
+        model = Mock()
+        model.SaveAs3.return_value = 0
+        get_part.return_value = (model, True)
+        extrude.return_value = SimpleNamespace(Name="Boss-Extrude1")
+        with patch("solidworks_mcp.solidworks_api.part.validate_output_file", return_value=(True, "")):
+            result = create_cone(Mock(), 20, 10, 30, "cone.sldprt")
+        self.assertTrue(result["success"])
+        # Sketch carries the bottom radius: 20 mm -> 0.01 m.
+        circle.assert_called_once_with(model, 0.01)
+        # Draft follows the real-machine contract: radians, far end narrows.
+        expected_angle = math.atan2(5.0, 30.0)
+        extrude.assert_called_once_with(model, 0.03, True, False, expected_angle)
+        self.assertEqual(result["data"]["feature_name"], "Boss-Extrude1")
+        self.assertEqual(
+            result["data"]["draft_angle_degrees"],
+            round(math.degrees(expected_angle), 4),
+        )
+        self.assertEqual(result["data"]["saved_to"], "cone.sldprt")
+
+    @patch("solidworks_mcp.solidworks_api.part._extrude_draft_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._create_circle_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._select_plane", return_value="Front Plane")
+    @patch("solidworks_mcp.solidworks_api.part._get_or_create_part")
+    def test_create_cone_equal_diameters_disables_draft(
+        self, get_part, _plane, _circle, extrude
+    ):
+        model = Mock()
+        get_part.return_value = (model, True)
+        extrude.return_value = SimpleNamespace(Name="Boss-Extrude1")
+        result = create_cone(Mock(), 20, 20, 30)
+        self.assertTrue(result["success"])
+        extrude.assert_called_once_with(model, 0.03, False, False, 0.0)
+        self.assertEqual(result["data"]["draft_angle_degrees"], 0.0)
+
+    def test_create_cone_rejects_invalid_dimensions(self):
+        self.assertEqual(
+            create_cone(Mock(), 20, -5, 30)["error"]["code"], "INVALID_PARAMETER"
+        )
+        self.assertEqual(
+            create_cone(Mock(), 0, 10, 30)["error"]["code"], "INVALID_PARAMETER"
+        )
+        self.assertEqual(
+            create_cone(Mock(), 20, float("nan"), 30)["error"]["code"],
+            "INVALID_PARAMETER",
+        )
+
+    @patch("solidworks_mcp.solidworks_api.part._extrude_draft_sketch", return_value=None)
+    @patch("solidworks_mcp.solidworks_api.part._create_circle_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._select_plane", return_value="Front Plane")
+    @patch("solidworks_mcp.solidworks_api.part._get_or_create_part", return_value=(Mock(), True))
+    def test_create_cone_reports_extrusion_failure(self, _part, _plane, _sketch, _extrude):
+        self.assertIn("Drafted", create_cone(Mock(), 20, 10, 30)["message"])
 
 
 class TestPartInspection(unittest.TestCase):

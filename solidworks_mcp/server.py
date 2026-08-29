@@ -20,6 +20,7 @@ from solidworks_mcp.solidworks_api.design import (
     create_new_part,
     create_plate,
     cut_round_hole,
+    cut_threaded_hole,
     execute_design_plan,
 )
 from solidworks_mcp.solidworks_api.features import (
@@ -34,7 +35,12 @@ from solidworks_mcp.solidworks_api.file_io import (
     import_step,
     open_document,
 )
-from solidworks_mcp.solidworks_api.part import create_box, create_cylinder, get_mass_properties
+from solidworks_mcp.solidworks_api.part import (
+    create_box,
+    create_cone,
+    create_cylinder,
+    get_mass_properties,
+)
 from solidworks_mcp.solidworks_api.pattern import (
     AnnularRing,
     build_annular_layout,
@@ -58,6 +64,10 @@ PositiveMM = Annotated[
 FiniteMM = Annotated[
     float,
     Field(allow_inf_nan=False, description="Finite coordinate in millimeters"),
+]
+NonNegativeMM = Annotated[
+    float,
+    Field(ge=0, allow_inf_nan=False, description="Non-negative length in millimeters"),
 ]
 NonEmptyString = Annotated[str, Field(min_length=1)]
 MateType = Literal["coincident", "concentric", "distance"]
@@ -211,12 +221,28 @@ def _capabilities() -> Dict[str, Any]:
             {"type": "box", "width": 100, "depth": 60, "height": 10},
             {"type": "plate", "width": 100, "depth": 60, "thickness": 6},
             {"type": "cylinder", "diameter": 20, "height": 40},
+            {"type": "cone", "bottom_diameter": 30, "top_diameter": 10, "height": 40},
             {
                 "type": "hole",
                 "diameter": 6,
                 "x": 15,
                 "y": 10,
                 "plane": "top",
+                "through_all": True,
+            },
+            {
+                "type": "threaded_hole",
+                "spec": "M6",
+                "x": 15,
+                "y": 10,
+                "plane": "top",
+                "through_all": True,
+            },
+            {
+                "type": "annular_pattern",
+                "rings": [{"radius_mm": 30, "count": 6, "diameter_mm": 6}],
+                "plane": "top",
+                "feature_kind": "cut",
                 "through_all": True,
             },
         ],
@@ -228,7 +254,7 @@ def _capabilities() -> Dict[str, Any]:
             "SolidWorks COM calls are serialized on one STA thread.",
         ],
         "limitations": [
-            "Design plans currently support primitive bosses and round cut holes.",
+            "Design plans currently support primitive bosses (box/plate/cylinder/cone), round cut holes, ISO threaded holes, and annular patterns.",
             "solidworks_part_create_ring_light generates a validated spherical-dome LED layout (row_counts is free-form, defaulting to the confirmed 9-row product layout); the native SLDPRT uses 24 annular bands when FeatureRevolve2 is unavailable.",
             "Assembly mates use the compatibility AddMate5 API for basic mate types.",
             "Complex surfaces, drawings, simulation, and PDM are not yet exposed.",
@@ -402,6 +428,43 @@ def solidworks_part_cut_round_hole(
     return _call_connected(
         lambda sw: cut_round_hole(
             sw, diameter, x, y, plane, depth, through_all
+        ),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Create cone", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_create_cone(
+    bottom_diameter: PositiveMM,
+    height: PositiveMM,
+    top_diameter: NonNegativeMM = 0.0,
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Add a centered conical/frustum boss (drafted extrusion) to the active part."""
+    return _call_connected(
+        lambda sw: create_cone(
+            sw, bottom_diameter, top_diameter, height, save_path, overwrite_confirm
+        ),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Cut threaded hole", annotations=DESTRUCTIVE, structured_output=True)
+def solidworks_part_cut_threaded_hole(
+    spec: NonEmptyString,
+    x: FiniteMM = 0.0,
+    y: FiniteMM = 0.0,
+    plane: NonEmptyString = "top",
+    depth: Optional[PositiveMM] = None,
+    through_all: bool = True,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Cut an ISO coarse-thread hole (M2-M20) at its tap-drill diameter with a cosmetic thread."""
+    return _call_connected(
+        lambda sw: cut_threaded_hole(
+            sw, spec, x, y, plane, depth, through_all
         ),
         launch_if_needed,
     )

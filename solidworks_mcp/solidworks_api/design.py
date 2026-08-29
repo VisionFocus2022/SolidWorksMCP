@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Dict, List, Optional
 
 import pythoncom
 
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
 from solidworks_mcp.solidworks_api.constants import (
+    THREAD_SPECS,
     swDocPART,
     swFileSaveErrorNone,
     swSaveAsOptions_Silent,
@@ -17,7 +19,11 @@ from solidworks_mcp.solidworks_api.geometry import (
     latest_feature_name as _latest_feature_name,
 )
 from solidworks_mcp.solidworks_api.geometry import mm_to_m, select_plane
-from solidworks_mcp.solidworks_api.part import create_box, create_cylinder
+from solidworks_mcp.solidworks_api.part import (
+    create_box,
+    create_cone,
+    create_cylinder,
+)
 from solidworks_mcp.solidworks_api.sketch import cut_feature
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
@@ -33,12 +39,40 @@ PLANE_ALIASES = {
     "right": ["Right Plane", "右视基准面"],
 }
 
+# Hole-feature sketch planes: everything this repo models grows +Z from
+# a Front-Plane sketch (part.PLANE_CANDIDATES: box/plate/cylinder/cone),
+# so the "top" of such a part is its +Z face and a hole asked for plane
+# "top" must be drilled along Z through that face. Resolving "top" to
+# SW's native Top Plane (XZ sketch, Y normal) instead drills sideways
+# through the plate flank -- verified on the real machine
+# (tools/probe_hole_plane_context.py: a requested top hole landed
+# axis -Y on the y=+40 flank, and 4 of 6 annular holes missed the
+# plate entirely). Same form as aicad channel B (sw_rebuild.py
+# real-machine contract: front-plane sketch + cut Dir=True).
+HOLE_PLANE_ALIASES = {
+    "front": ["Front Plane", "前视基准面"],
+    "top": ["Front Plane", "前视基准面"],
+    "right": ["Right Plane", "右视基准面"],
+}
+
+
+def _hole_sketch_plane(plane: str) -> str:
+    """User-facing hole-plane alias -> the SW plane the sketch lands on."""
+    key = plane.strip().lower()
+    return "front" if key in ("top", "front") else key
+
 
 def _get_active_part(sw_app: SolidWorksApp) -> Any:
     model = sw_app.get_active_document()
     if model is None or call_or_value(model, "GetType") != swDocPART:
         raise RuntimeError("No active part document")
     return model
+
+
+def _select_hole_plane(model: Any, plane: str) -> Optional[str]:
+    """Resolve a hole-plane alias (top means the +Z face, see above)."""
+    candidates = HOLE_PLANE_ALIASES.get(plane.lower(), [plane])
+    return select_plane(model, candidates)
 
 
 def _select_plane(model: Any, plane: str) -> Optional[str]:
@@ -150,7 +184,7 @@ def cut_round_hole(
             depth = positive_number("depth", depth)
 
         model = _get_active_part(sw_app)
-        selected_plane = _select_plane(model, plane)
+        selected_plane = _select_hole_plane(model, plane)
         if selected_plane is None:
             return error_response(f"Could not select plane: {plane}")
 
@@ -214,6 +248,162 @@ def cut_round_hole(
     except Exception as exc:
         logger.exception("Failed to cut round hole")
         return error_response(f"Failed to cut round hole: {exc}")
+
+
+# Through-all hole mouths sit at unknown distances along the sketch-plane
+# normal (they meet the part surfaces, not the sketch plane), so the
+# coordinate-based EDGE pick sweeps these offsets in metres.
+_NORMAL_OFFSETS_THROUGH_ALL_M = (
+    0.0, 0.002, -0.002, 0.005, -0.005, 0.01, -0.01,
+    0.02, -0.02, 0.04, -0.04, 0.08, -0.08, 0.16, -0.16, 0.32, -0.32,
+)
+
+
+def _mouth_point_model_coords(
+    x_m: float, y_m: float, plane: str, normal_m: float
+) -> tuple:
+    """Map the 45-degree sketch-space mouth point into MODEL coordinates.
+
+    Sketch (x, y) live on the named base plane; SelectByID2 wants model
+    (X, Y, Z). Blind-hole mouths sit on the sketch plane itself (offset 0);
+    through-all mouths sit wherever the hole meets the part surfaces.
+    """
+    key = plane.strip().lower()
+    if key == "top":  # sketch x->X, sketch y->Z, normal along Y
+        return (x_m, normal_m, y_m)
+    if key == "right":  # sketch x->Y, sketch y->Z, normal along X
+        return (normal_m, x_m, y_m)
+    # front (and unknown planes): sketch x->X, sketch y->Y, normal along Z
+    return (x_m, y_m, normal_m)
+
+
+def _stamp_cosmetic_thread(
+    model: Any,
+    spec: str,
+    drill_diameter: float,
+    x: float,
+    y: float,
+    depth: Optional[float],
+    plane: str = "front",
+) -> bool:
+    """Best-effort cosmetic thread on the hole-mouth edge (never fatal).
+
+    The circular edge is picked by coordinates at 45 degrees off the
+    sketch axes, mapped into model space for the sketch plane (real-machine
+    probe contract); the major diameter comes from the spec name itself
+    ("M8" -> 8 mm). The created feature is NOT enumerable over
+    FirstFeature/GetNextFeature, so callers must verify via the returned
+    boolean, never via a tree walk.
+    """
+    radius_m = mm_to_m(drill_diameter) / 2.0
+    diagonal = radius_m * math.cos(math.pi / 4.0)
+    # Blind holes carry their real depth; through holes fall back to the
+    # nominal diameter as a conservative annotation length.
+    major_m = float(spec[1:]) / 1000.0
+    depth_m = mm_to_m(depth) if depth else major_m
+    note = f"{spec}x{THREAD_SPECS[spec][1]:g}"
+    sx = mm_to_m(x) + diagonal
+    sy = mm_to_m(y) + diagonal
+    offsets = (0.0,) if depth else _NORMAL_OFFSETS_THROUGH_ALL_M
+    sketch_plane = _hole_sketch_plane(plane)
+    model.ClearSelection2(True)
+    picked = False
+    for offset in offsets:
+        px, py, pz = _mouth_point_model_coords(sx, sy, sketch_plane, offset)
+        picked = model.Extension.SelectByID2(
+            "",
+            "EDGE",
+            px,
+            py,
+            pz,
+            False,
+            0,
+            pythoncom.Nothing,
+            0,
+        )
+        if picked:
+            break
+    if not picked:
+        logger.debug("thread mouth edge for %s not selected", spec)
+        return False
+    try:
+        created = model.FeatureManager.InsertCosmeticThread2(
+            0,
+            major_m,
+            depth_m,
+            note,
+        )
+    except Exception:
+        logger.debug("InsertCosmeticThread2 failed", exc_info=True)
+        return False
+    return created is not None
+
+
+def cut_threaded_hole(
+    sw_app: SolidWorksApp,
+    spec: str,
+    x: float,
+    y: float,
+    plane: str = "top",
+    depth: Optional[float] = None,
+    through_all: bool = True,
+) -> dict:
+    """Cut an ISO coarse-thread hole at its tap-drill diameter with a cosmetic thread.
+
+    The hole itself is a plain ``cut_round_hole`` at the ISO 273 tap-drill
+    diameter; the thread is stamped as a best-effort cosmetic annotation
+    (HoleWizard requires interactive panels this channel cannot drive).
+    """
+    try:
+        if not isinstance(spec, str) or not spec.strip():
+            return error_response(
+                "spec must be a non-empty string like 'M6'",
+                code="INVALID_PARAMETER",
+            )
+        spec_key = spec.strip().upper()
+        thread_spec = THREAD_SPECS.get(spec_key)
+        if thread_spec is None:
+            supported = ", ".join(sorted(THREAD_SPECS))
+            return error_response(
+                f"Unsupported thread spec: {spec}. Supported: {supported}",
+                code="INVALID_PARAMETER",
+            )
+        drill_diameter, pitch = thread_spec
+
+        cut = cut_round_hole(sw_app, drill_diameter, x, y, plane, depth, through_all)
+        if not cut.get("success"):
+            return cut
+
+        stamped = _stamp_cosmetic_thread(
+            _get_active_part(sw_app), spec_key, drill_diameter, x, y, depth, plane
+        )
+
+        data: Dict[str, Any] = dict(cut.get("data") or {})
+        data["thread"] = {
+            "spec": spec_key,
+            "tap_drill_diameter": drill_diameter,
+            "pitch": pitch,
+            "cosmetic_thread_stamped": stamped,
+        }
+        return success_response(
+            data=data,
+            message=(
+                f"Created {spec_key} threaded hole "
+                f"(tap drill {drill_diameter}mm on plane {plane})"
+            ),
+            warning=(
+                None
+                if stamped
+                else "Cosmetic thread annotation was skipped (hole mouth edge not selectable)."
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to cut threaded hole")
+        return error_response(f"Failed to cut threaded hole: {exc}")
 
 
 def execute_design_plan(
@@ -280,12 +470,62 @@ def execute_design_plan(
                         "through_all", operation.get("through_all", True)
                     ),
                 )
+            elif op_type == "cone":
+                result = create_cone(
+                    sw_app,
+                    float(operation["bottom_diameter"]),
+                    float(operation.get("top_diameter", 0.0)),
+                    float(operation["height"]),
+                )
+            elif op_type in {"threaded_hole", "thread_hole"}:
+                result = cut_threaded_hole(
+                    sw_app,
+                    spec=str(operation["spec"]),
+                    x=float(operation.get("x", 0.0)),
+                    y=float(operation.get("y", 0.0)),
+                    plane=str(operation.get("plane", "top")),
+                    depth=(
+                        None
+                        if operation.get("depth") is None
+                        else float(operation.get("depth"))
+                    ),
+                    through_all=parse_bool(
+                        "through_all", operation.get("through_all", True)
+                    ),
+                )
+            elif op_type in {"annular_pattern", "ring_pattern"}:
+                # Imported here (not at module top) because pattern.py itself
+                # imports plane aliases and save helpers from this module.
+                from solidworks_mcp.solidworks_api.pattern import create_annular_pattern
+
+                rings = operation.get("rings")
+                if not isinstance(rings, list) or not rings:
+                    return error_response(
+                        f"Operation {index} requires a non-empty 'rings' list",
+                        code="INVALID_PARAMETER",
+                    )
+                result = create_annular_pattern(
+                    sw_app,
+                    rings,
+                    plane=str(operation.get("plane", "top")),
+                    feature_kind=str(operation.get("feature_kind", "cut")),
+                    depth=(
+                        None
+                        if operation.get("depth") is None
+                        else float(operation.get("depth"))
+                    ),
+                    through_all=parse_bool(
+                        "through_all", operation.get("through_all", True)
+                    ),
+                    avoid_angles_degrees=operation.get("avoid_angles_degrees"),
+                )
             elif op_type == "new_part":
                 result = create_new_part(sw_app)
             else:
                 return error_response(
                     f"Unsupported operation at index {index}: {op_type}. "
-                    "Supported types: new_part, box, plate, cylinder, hole."
+                    "Supported types: new_part, box, plate, cylinder, cone, "
+                    "hole, threaded_hole, annular_pattern."
                 )
         except KeyError as exc:
             return error_response(

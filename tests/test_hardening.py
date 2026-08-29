@@ -8,8 +8,8 @@ candidates (action 18).
 
 from __future__ import annotations
 
+import _winapi
 import os
-import subprocess
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -72,12 +72,13 @@ class TestNormalizePathOrdering(unittest.TestCase):
             os.makedirs(root)
             os.makedirs(outside)
             link = os.path.join(root, "link")
-            created = subprocess.run(
-                ["cmd", "/c", "mklink", "/J", link, outside],
-                capture_output=True,
-                text=True,
-            )
-            if created.returncode != 0:
+            try:
+                # In-process junction creation: spawning `cmd /c mklink` hangs
+                # or fails outright under restricted sandboxes and exhausted
+                # pagefiles (seen as WinError 1455), leaving orphaned test
+                # processes behind. _winapi.CreateJunction needs no subprocess.
+                _winapi.CreateJunction(outside, link)
+            except OSError:
                 self.skipTest("junction creation not permitted on this host")
             victim = os.path.join(root, "link", "..", "escape.sldprt")
 
@@ -117,12 +118,9 @@ class TestSinksUseNormalizedPaths(unittest.TestCase):
             os.makedirs(root)
             os.makedirs(outside)
             link = os.path.join(root, "link")
-            created = subprocess.run(
-                ["cmd", "/c", "mklink", "/J", link, outside],
-                capture_output=True,
-                text=True,
-            )
-            if created.returncode != 0:
+            try:
+                _winapi.CreateJunction(outside, link)
+            except OSError:
                 self.skipTest("junction creation not permitted on this host")
 
             ok, message, _normalized = ensure_sink_path(
