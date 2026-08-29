@@ -29,6 +29,7 @@ from solidworks_mcp.solidworks_api.design import (
     cut_round_hole,
     cut_threaded_hole,
     execute_design_plan,
+    rebuild_csg_plan,
 )
 from solidworks_mcp.solidworks_api.features import (
     delete_feature,
@@ -615,6 +616,18 @@ def solidworks_part_add_configuration(
     """Add a derived configuration to the active document."""
     return _call_connected(
         lambda sw: add_configuration(sw, name),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Rebuild CSG plan", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_features_rebuild_csg(
+    plan: Dict[str, Any],
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Rebuild a cross-engine CSG plan (v1: box/cylinder/cone/cut_cylinder, stacking semantics) as an SW feature tree."""
+    return _call_connected(
+        lambda sw: rebuild_csg_plan(sw, plan),
         launch_if_needed,
     )
 

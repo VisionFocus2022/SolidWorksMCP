@@ -45,6 +45,149 @@ def _get_or_create_part(sw_app: SolidWorksApp) -> tuple[Any, bool]:
 
 PLANE_CANDIDATES = ["Front Plane", "前视基准面"]
 
+#: Face-walk ceiling for the top-face selector (bounded like every walk).
+MAX_FACE_WALK = 2000
+
+
+def _select_top_face(model: Any) -> Optional[Any]:
+    """Select and return the highest solid face (stacking anchor).
+
+    Real-machine contract (T16 probe): faces walk through
+    ``GetBodies2(0, False) → GetFirstFace/GetNextFace`` (zero-arg
+    properties); ``face.GetBox()`` is a zero-arg member returning a
+    6-tuple (xmin, ymin, zmin, xmax, ymax, zmax) in metres. The winner
+    is the face with the greatest zmin; ``Select2(False, 0)`` then makes
+    it the sketch plane (stacking is exact: box 20 + cylinder 30 →
+    bbox z = 50).
+    """
+    bodies = model.GetBodies2(0, False)  # swBodyType_e.swSolidBody
+    if not bodies:
+        return None
+    face = call_or_value(bodies[0], "GetFirstFace")
+    best = None
+    steps = 0
+    while face is not None and steps < MAX_FACE_WALK:
+        box = call_or_value(face, "GetBox")
+        if not isinstance(box, (tuple, list)) or len(box) < 6:
+            break  # degenerate proxy — stop immediately
+        try:
+            z_min = float(box[2])
+        except (TypeError, ValueError):
+            break
+        steps += 1
+        if best is None or z_min > best[0]:
+            best = (z_min, face)
+        face = call_or_value(face, "GetNextFace")
+    if best is None:
+        return None
+    try:
+        selected = best[1].Select2(False, 0)
+    except Exception:
+        logger.exception("Top-face selection failed")
+        return None
+    return best[1] if selected else None
+
+
+def create_cylinder_on_face(
+    sw_app: SolidWorksApp,
+    diameter: float,
+    height: float,
+) -> dict:
+    """Stack a cylinder on the current body's top face (CSG v1 op)."""
+    try:
+        diameter = positive_number("diameter", diameter)
+        height = positive_number("height", height)
+        model = sw_app.get_active_document()
+        if model is None or call_or_value(model, "GetType") != swDocPART:
+            return error_response("No active part document")
+        top = _select_top_face(model)
+        if top is None:
+            return error_response(
+                "No top face to stack on (the document has no solid body)",
+                code="SW_API_ERROR",
+            )
+        model.SketchManager.InsertSketch(True)
+        model.SketchManager.CreateCircleByRadius(0, 0, 0, mm_to_m(diameter) / 2.0)
+        model.SketchManager.InsertSketch(True)
+        feature = extrude_boss(model, mm_to_m(height))
+        if feature is None:
+            return error_response(
+                "Stacked extrusion feature creation failed", code="SW_API_ERROR"
+            )
+        return success_response(
+            data={"feature_name": feature.Name},
+            message=f"Stacked cylinder Ø{diameter}×{height}mm on the top face",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to stack cylinder")
+        return error_response(f"Failed to stack cylinder: {exc}")
+
+
+def create_cone_on_face(
+    sw_app: SolidWorksApp,
+    bottom_diameter: float,
+    top_diameter: float,
+    height: float,
+) -> dict:
+    """Stack a drafted cone on the current body's top face (CSG v1 op).
+
+    Draft semantics mirror ``create_cone`` (real-machine contract):
+    angle = ``atan2(|r_top - r_bottom|, height)``; outward draft when the
+    top is wider.
+    """
+    try:
+        bottom_diameter = positive_number("bottom_diameter", bottom_diameter)
+        top_diameter = positive_number("top_diameter", top_diameter)
+        height = positive_number("height", height)
+        model = sw_app.get_active_document()
+        if model is None or call_or_value(model, "GetType") != swDocPART:
+            return error_response("No active part document")
+        top = _select_top_face(model)
+        if top is None:
+            return error_response(
+                "No top face to stack on (the document has no solid body)",
+                code="SW_API_ERROR",
+            )
+        r_bottom = bottom_diameter / 2.0
+        r_top = top_diameter / 2.0
+        draft_angle_rad = math.atan2(abs(r_top - r_bottom), height)
+        model.SketchManager.InsertSketch(True)
+        model.SketchManager.CreateCircleByRadius(0, 0, 0, mm_to_m(bottom_diameter) / 2.0)
+        model.SketchManager.InsertSketch(True)
+        feature = extrude_boss_draft(
+            model,
+            mm_to_m(height),
+            top_diameter != bottom_diameter,
+            r_top > r_bottom,
+            draft_angle_rad,
+        )
+        if feature is None:
+            return error_response(
+                "Stacked drafted extrusion feature creation failed",
+                code="SW_API_ERROR",
+            )
+        return success_response(
+            data={
+                "feature_name": feature.Name,
+                "draft_angle_degrees": round(math.degrees(draft_angle_rad), 4),
+            },
+            message=(
+                f"Stacked cone Ø{bottom_diameter}→Ø{top_diameter}×{height}mm "
+                "on the top face"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to stack cone")
+        return error_response(f"Failed to stack cone: {exc}")
+
 
 def _select_plane(model: Any) -> Optional[str]:
     """Select a reference plane by common Chinese/English names."""

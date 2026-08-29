@@ -28,6 +28,8 @@ from solidworks_mcp.solidworks_api.part import (
     create_cone,
     create_cylinder,
 )
+from solidworks_mcp.solidworks_api import part as part_module
+from solidworks_mcp.solidworks_api.features import rename_feature
 from solidworks_mcp.solidworks_api.sketch import cut_feature
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
@@ -642,3 +644,225 @@ def _delete_new_features(
     except Exception as exc:
         logger.exception("Design-plan rollback failed")
         return _cap_names(deleted), f"rollback error: {exc}"
+
+
+# --- T16: cross-engine CSG rebuild (contract v1, docs/csg-plan-v1.md) ---
+
+CSG_VERSION = 1
+CSG_OPS = ("box", "cylinder", "cone", "cut_cylinder")
+_Z_TOLERANCE = 1e-6
+
+
+def _validate_csg_plan(plan: Any) -> Optional[str]:
+    """Manual contract validation; returns the first problem or None."""
+    if not isinstance(plan, dict):
+        return "plan must be a dict"
+    if plan.get("version") != CSG_VERSION:
+        return (f"unsupported plan version {plan.get('version')!r} "
+                f"(expected {CSG_VERSION})")
+    if plan.get("units") != "mm":
+        return "units must be 'mm'"
+    ops = plan.get("operations")
+    if not isinstance(ops, list) or not ops:
+        return "operations must be a non-empty list"
+    names = set()
+    for index, op in enumerate(ops):
+        if not isinstance(op, dict):
+            return f"operation[{index}] must be a dict"
+        kind = op.get("op")
+        if kind not in CSG_OPS:
+            return (f"operation[{index}]: unknown op {kind!r} "
+                    f"(supported: {', '.join(CSG_OPS)})")
+        name = op.get("name")
+        if not isinstance(name, str) or not name:
+            return f"operation[{index}]: name must be a non-empty string"
+        if name in names:
+            return (f"operation[{index}]: feature names must be unique "
+                    f"({name!r})")
+        names.add(name)
+        at = op.get("at")
+        if (
+            not isinstance(at, (list, tuple))
+            or len(at) != 3
+            or not all(isinstance(v, (int, float)) for v in at)
+        ):
+            return f"operation[{index}]: at must be three numbers [x, y, z]"
+
+        def _positive(key):
+            value = op.get(key)
+            if not isinstance(value, (int, float)) or value <= 0:
+                return f"operation[{index}]: {kind} needs a positive {key}"
+            return None
+
+        if kind == "box":
+            size = op.get("size")
+            if (
+                not isinstance(size, (list, tuple))
+                or len(size) != 3
+                or not all(isinstance(v, (int, float)) and v > 0 for v in size)
+            ):
+                return ("operation[{index}]: box needs size=[width, depth, "
+                        "height] with positive numbers")
+        elif kind == "cylinder":
+            problem = _positive("diameter") or _positive("height")
+            if problem:
+                return problem
+        elif kind == "cone":
+            problem = (
+                _positive("bottom_diameter")
+                or _positive("top_diameter")
+                or _positive("height")
+            )
+            if problem:
+                return problem
+        else:  # cut_cylinder
+            problem = _positive("diameter")
+            if problem:
+                return problem
+            depth = op.get("depth")
+            if depth is not None and (
+                not isinstance(depth, (int, float)) or depth <= 0
+            ):
+                return ("operation[{index}]: cut_cylinder depth must be "
+                        "positive or null")
+            if depth is None and not op.get("through"):
+                return ("operation[{index}]: cut_cylinder needs depth or "
+                        "through=true")
+    return None
+
+
+def rebuild_csg_plan(sw_app: SolidWorksApp, plan: dict) -> dict:
+    """Rebuild a cross-engine CSG plan (contract v1) as an SW feature tree.
+
+    v1 semantics (docs/csg-plan-v1.md): operations apply sequentially;
+    solid ops stack on the axis -- ``at.z`` must equal the current stack
+    top (box first at the origin; later solids sketch on the body's top
+    face, real-machine verified exact). ``cut_cylinder`` supports x/y
+    offsets and cuts from the top. Failures roll back atomically (T10
+    machinery). Ops dispatch to the existing part primitives; each new
+    feature is renamed to the contract's ``name``.
+    """
+    try:
+        problem = _validate_csg_plan(plan)
+        if problem:
+            return error_response(problem, code="INVALID_PARAMETER")
+
+        model = sw_app.get_active_document()
+        if model is None or call_or_value(model, "GetType") != swDocPART:
+            try:
+                model, _created = part_module._get_or_create_part(sw_app)
+            except Exception as exc:
+                return error_response(
+                    f"Could not create a part document: {exc}",
+                    code="SW_API_ERROR",
+                )
+        before = _snapshot_feature_names(model)
+
+        applied = []
+        stack_top = 0.0
+
+        def _fail(result):
+            rolled_back, warning = _delete_new_features(sw_app, before)
+            data = {
+                "applied_before_failure": applied,
+                "rolled_back": rolled_back,
+            }
+            if warning:
+                data["rollback_warning"] = warning
+            return error_response(
+                f"CSG plan stopped at operation {len(applied)}: "
+                f"{result.get('message')}",
+                data=data,
+            )
+
+        for index, op in enumerate(plan["operations"]):
+            kind = op["op"]
+            name = op["name"]
+            x, y, z = (float(v) for v in op["at"])
+
+            if kind == "box":
+                if index != 0 or abs(x) > 1e-9 or abs(y) > 1e-9 or abs(z) > 1e-9:
+                    return error_response(
+                        "operation[0]: v1 requires the box to be the first op "
+                        "at [0, 0, 0] (stacking starts at the origin)",
+                        code="INVALID_PARAMETER",
+                    )
+                width, depth, height = (float(v) for v in op["size"])
+                result = part_module.create_box(sw_app, width, depth, height)
+                if not result.get("success"):
+                    return _fail(result)
+                stack_top = height
+            elif kind in ("cylinder", "cone"):
+                if abs(x) > 1e-9 or abs(y) > 1e-9:
+                    return error_response(
+                        f"operation[{index}]: v1 stacks solids on the axis "
+                        "(at.x/at.y must be 0)",
+                        code="INVALID_PARAMETER",
+                    )
+                if abs(z - stack_top) > _Z_TOLERANCE:
+                    return error_response(
+                        f"operation[{index}]: at.z={z} does not match the "
+                        f"current stack top {stack_top} (v1 supports "
+                        "stacking only)",
+                        code="INVALID_PARAMETER",
+                    )
+                if kind == "cylinder":
+                    builder = (
+                        part_module.create_cylinder
+                        if stack_top == 0.0
+                        else part_module.create_cylinder_on_face
+                    )
+                    result = builder(sw_app, op["diameter"], op["height"])
+                else:
+                    builder = (
+                        part_module.create_cone
+                        if stack_top == 0.0
+                        else part_module.create_cone_on_face
+                    )
+                    result = builder(
+                        sw_app,
+                        op["bottom_diameter"],
+                        op["top_diameter"],
+                        op["height"],
+                    )
+                if not result.get("success"):
+                    return _fail(result)
+                stack_top = z + float(op["height"])
+            else:  # cut_cylinder
+                result = cut_round_hole(
+                    sw_app,
+                    op["diameter"],
+                    x,
+                    y,
+                    "top",
+                    op.get("depth"),
+                    bool(op.get("through")),
+                )
+                if not result.get("success"):
+                    return _fail(result)
+
+            feature_name = (result.get("data") or {}).get("feature_name")
+            final_name = name
+            if isinstance(feature_name, str) and feature_name != name:
+                renamed = rename_feature(sw_app, feature_name, name)
+                if not renamed.get("success"):
+                    final_name = feature_name
+            applied.append(final_name)
+
+        return success_response(
+            data={
+                "applied": applied,
+                "feature_count": len(applied),
+                "stack_top_mm": round(stack_top, 6),
+                "rolled_back": False,
+            },
+            message=(
+                f"Rebuilt {len(applied)} CSG features "
+                f"(stack top {round(stack_top, 3)}mm)"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to rebuild CSG plan")
+        return error_response(f"Failed to rebuild CSG plan: {exc}")

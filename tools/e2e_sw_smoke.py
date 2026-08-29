@@ -219,6 +219,50 @@ def main() -> int:
         e2e.steps.append({"name": "drawing.cleanup", "success": False,
                           "error": {"code": "EXCEPTION", "details": repr(exc)}})
 
+    # --- CSG 重建链（T16）：契约示例 → 4 特征 → bbox 断言 ---
+    from solidworks_mcp.solidworks_api import design as design_api
+
+    csg_plan = {
+        "version": 1, "units": "mm",
+        "operations": [
+            {"op": "box", "name": "base", "size": [60, 40, 20], "at": [0, 0, 0]},
+            {"op": "cylinder", "name": "boss", "diameter": 20, "height": 30,
+             "at": [0, 0, 20]},
+            {"op": "cut_cylinder", "name": "bore", "diameter": 8, "depth": None,
+             "through": True, "at": [0, 0, 0]},
+            {"op": "cone", "name": "tip", "bottom_diameter": 10,
+             "top_diameter": 4, "height": 12, "at": [0, 0, 50]},
+        ],
+    }
+    csg = e2e.step("csg.rebuild", design_api.rebuild_csg_plan, sw, csg_plan)
+    applied = (csg.get("data") or {}).get("applied") or []
+    e2e.steps.append({"name": "csg.expect_features",
+                      "success": applied == ["base", "boss", "bore", "tip"],
+                      "error": None if applied else {"code": "CSG_APPLIED", "details": applied}})
+    det2 = e2e.step("csg.get_feature_details", features.get_feature_details, sw)
+    tree_names = {f["name"] for f in (det2.get("data") or {}).get("features") or []}
+    e2e.steps.append({"name": "csg.expect_tree",
+                      "success": {"base", "boss", "bore", "tip"} <= tree_names,
+                      "error": None})
+    bb2 = e2e.step("csg.get_bounding_box", measure.get_bounding_box, sw)
+    size2 = (bb2.get("data") or {}).get("size_mm")
+    e2e.steps.append({"name": "csg.expect_bbox_60_40_62",
+                      "success": size2 == [60.0, 40.0, 62.0],
+                      "error": None if size2 == [60.0, 40.0, 62.0]
+                      else {"code": "BBOX_MISMATCH", "details": size2}})
+    try:
+        sw.get_active_document().SaveAs3(str(WORK_DIR / "e2e_csg.SLDPRT"), 0, 1)
+        e2e.steps.append({"name": "csg.save", "success": True})
+    except Exception as exc:
+        e2e.steps.append({"name": "csg.save", "success": False,
+                          "error": {"code": "EXCEPTION", "details": repr(exc)}})
+    try:
+        sw.app.CloseAllDocuments(True)
+        e2e.steps.append({"name": "csg.cleanup", "success": True})
+    except Exception as exc:
+        e2e.steps.append({"name": "csg.cleanup", "success": False,
+                          "error": {"code": "EXCEPTION", "details": repr(exc)}})
+
     e2e.write_report()
     return 1 if e2e.failed else 0
 
