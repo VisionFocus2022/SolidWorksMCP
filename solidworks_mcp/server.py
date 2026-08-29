@@ -57,6 +57,15 @@ from solidworks_mcp.solidworks_api.pattern import (
     build_annular_layout,
     create_annular_pattern,
 )
+from solidworks_mcp.solidworks_api.properties import (
+    add_configuration,
+    add_equation,
+    get_custom_properties,
+    get_material,
+    list_equations,
+    set_custom_property,
+    set_material,
+)
 from solidworks_mcp.examples.ring_light import create_ring_light
 from solidworks_mcp.examples.ring_light_v3 import create_ring_light_v3
 from solidworks_mcp.utils.com import call_or_value
@@ -518,6 +527,79 @@ def solidworks_part_apply_shell(
     """Hollow the part keeping thickness_mm walls; the named faces are removed."""
     return _call_connected(
         lambda sw: apply_shell(sw, face_names, thickness_mm),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Set material", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_set_material(
+    material_name: NonEmptyString,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Assign a material from the SOLIDWORKS MATERIALS library (Chinese names, e.g. 合金钢)."""
+    return _call_connected(
+        lambda sw: set_material(sw, material_name),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Get material", annotations=READ_ONLY, structured_output=True)
+def solidworks_part_get_material(
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Read the active part's material (name, database, configuration)."""
+    return _call_connected(get_material, launch_if_needed)
+
+
+@mcp.tool(title="Set custom property", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_set_custom_property(
+    name: NonEmptyString,
+    value: NonEmptyString,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Set a document-level custom property (text type, overwrite)."""
+    return _call_connected(
+        lambda sw: set_custom_property(sw, name, value),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Get custom properties", annotations=READ_ONLY, structured_output=True)
+def solidworks_part_get_custom_properties(
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """List document-level custom properties with resolved values."""
+    return _call_connected(get_custom_properties, launch_if_needed)
+
+
+@mcp.tool(title="Add equation", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_add_equation(
+    equation: NonEmptyString,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Append an equation or global variable, e.g. '\"x\" = 50'."""
+    return _call_connected(
+        lambda sw: add_equation(sw, equation),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="List equations", annotations=READ_ONLY, structured_output=True)
+def solidworks_part_list_equations(
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """List all equations and global variables with solved values."""
+    return _call_connected(list_equations, launch_if_needed)
+
+
+@mcp.tool(title="Add configuration", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_add_configuration(
+    name: NonEmptyString,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Add a derived configuration to the active document."""
+    return _call_connected(
+        lambda sw: add_configuration(sw, name),
         launch_if_needed,
     )
 

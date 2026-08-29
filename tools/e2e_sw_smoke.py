@@ -132,6 +132,17 @@ def main() -> int:
         e2e.step("decorations.apply_fillet", decorations.apply_fillet, sw, big_faces[:1], 2.0)
         e2e.step("decorations.apply_chamfer", decorations.apply_chamfer, sw, big_faces[1:2], 1.0)
     e2e.step("part.get_mass_properties", part.get_mass_properties, sw)
+
+    # --- 材料/属性/方程式/配置链（T17）---
+    from solidworks_mcp.solidworks_api import properties as props
+
+    e2e.step("props.set_material", props.set_material, sw, "合金钢")
+    e2e.step("props.get_material", props.get_material, sw)
+    e2e.step("props.set_custom_property", props.set_custom_property, sw, "PartNo", "E2E-001")
+    e2e.step("props.get_custom_properties", props.get_custom_properties, sw)
+    e2e.step("props.add_equation", props.add_equation, sw, '"e2e_x" = 50')
+    e2e.step("props.list_equations", props.list_equations, sw)
+    e2e.step("props.add_configuration", props.add_configuration, sw, "E2E_CFG")
     e2e.step("file_io.export_step", file_io.export_step, sw, str(WORK_DIR / "e2e_box.step"), True)
     e2e.step("file_io.export_stl", file_io.export_stl, sw, str(WORK_DIR / "e2e_box.stl"), True)
     e2e.step("file_io.close_document", file_io.close_document, sw, True)
