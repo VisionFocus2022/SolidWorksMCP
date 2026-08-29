@@ -37,6 +37,7 @@ from solidworks_mcp.solidworks_api.file_io import (
     open_document,
 )
 from solidworks_mcp.solidworks_api.topology import list_bodies, list_faces
+from solidworks_mcp.solidworks_api.decorations import apply_chamfer, apply_fillet
 from solidworks_mcp.solidworks_api.measure import get_bounding_box, measure_distance
 from solidworks_mcp.solidworks_api.part import (
     create_box,
@@ -471,6 +472,33 @@ def solidworks_part_create_revolved(
             sw, outer_diameter, height, bore_diameter, plane, save_path,
             overwrite_confirm,
         ),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Apply fillet to faces", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_apply_fillet(
+    face_names: List[NonEmptyString],
+    radius_mm: PositiveMM,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Fillet all edges of the named faces (names from list_faces) with a constant radius."""
+    return _call_connected(
+        lambda sw: apply_fillet(sw, face_names, radius_mm),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Apply chamfer to faces", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_apply_chamfer(
+    face_names: List[NonEmptyString],
+    distance_mm: PositiveMM,
+    angle_deg: float = 45.0,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Chamfer all edges of the named faces by distance and angle (0<angle<90)."""
+    return _call_connected(
+        lambda sw: apply_chamfer(sw, face_names, distance_mm, angle_deg),
         launch_if_needed,
     )
 

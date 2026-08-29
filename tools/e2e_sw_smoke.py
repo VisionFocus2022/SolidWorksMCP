@@ -125,6 +125,18 @@ def main() -> int:
     e2e.step("part.create_cylinder", part.create_cylinder, sw, 20.0, 50.0, cyl_path, True)
     e2e.step("part.create_cone", part.create_cone, sw, 30.0, 10.0, 40.0, str(WORK_DIR / "e2e_cone.SLDPRT"), True)
     e2e.step("part.create_revolved", part.create_revolved, sw, 40.0, 10.0, 20.0, "front", str(WORK_DIR / "e2e_ring.SLDPRT"), True)
+
+    # --- 装饰链（对回转环的面做圆角/倒角；选中走 walk+Select2，T5 契约）---
+    from solidworks_mcp.solidworks_api import decorations
+
+    listing = e2e.step("topology.list_faces2", topology.list_faces, sw)
+    ring_faces = [f["name"] for f in (listing.get("data") or {}).get("faces") or []]
+    if len(ring_faces) >= 2:
+        e2e.step("decorations.apply_fillet", decorations.apply_fillet, sw, ring_faces[:2], 2.0)
+        e2e.step("decorations.apply_chamfer", decorations.apply_chamfer, sw, ring_faces[:1], 1.0)
+    else:
+        e2e.steps.append({"name": "decorations.chain", "success": False,
+                          "error": {"code": "NO_FACES", "details": None}})
     e2e.step("file_io.close_document3", file_io.close_document, sw, False)
     e2e.step("file_io.import_step", file_io.import_step, sw, str(WORK_DIR / "e2e_box.step"))
     e2e.step("file_io.close_document4", file_io.close_document, sw, False)
