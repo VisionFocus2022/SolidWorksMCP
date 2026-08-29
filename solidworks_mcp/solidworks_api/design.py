@@ -18,7 +18,11 @@ from solidworks_mcp.solidworks_api.constants import (
 from solidworks_mcp.solidworks_api.geometry import (
     latest_feature_name as _latest_feature_name,
 )
-from solidworks_mcp.solidworks_api.geometry import mm_to_m, select_plane
+from solidworks_mcp.solidworks_api.geometry import (
+    mm_to_m,
+    select_plane,
+    walk_feature_names,
+)
 from solidworks_mcp.solidworks_api.part import (
     create_box,
     create_cone,
@@ -411,8 +415,15 @@ def execute_design_plan(
     operations: List[Dict[str, Any]],
     save_path: Optional[str] = None,
     overwrite_confirm: bool = False,
+    atomic: bool = True,
 ) -> dict:
-    """Execute a small ordered design plan made of supported operations."""
+    """Execute a small ordered design plan made of supported operations.
+
+    With ``atomic=True`` (default) any failed operation triggers a rollback:
+    features added since the plan started are deleted in reverse tree order,
+    so retrying a plan never stacks half-applied features. Rollback failures
+    never mask the original error — they surface as ``rollback_warning``.
+    """
     if not operations:
         return error_response(
             "operations must contain at least one operation",
@@ -427,7 +438,10 @@ def execute_design_plan(
         if not valid:
             return error_response(message, code="INVALID_OUTPUT_PATH")
 
+    initial_model = sw_app.get_active_document()
+    before = _snapshot_feature_names(initial_model)
     results: List[dict] = []
+    applied: List[int] = []
     for index, operation in enumerate(operations, start=1):
         try:
             if not isinstance(operation, dict):
@@ -540,10 +554,22 @@ def execute_design_plan(
 
         results.append({"index": index, "operation": op_type, "result": result})
         if not result.get("success"):
+            data = {
+                "completed": results,
+                "applied": applied,
+                "failed": index,
+                "rolled_back": None,
+            }
+            if atomic:
+                rolled_back, warning = _delete_new_features(sw_app, before)
+                data["rolled_back"] = rolled_back
+                if warning:
+                    data["rollback_warning"] = warning
             return error_response(
                 f"Design plan stopped at operation {index}: {result.get('message')}",
-                data={"completed": results},
+                data=data,
             )
+        applied.append(index)
 
     active = sw_app.get_active_document()
     if active is not None and save_path:
@@ -555,3 +581,64 @@ def execute_design_plan(
         data={"operations": results, "saved_to": save_path},
         message=f"Executed {len(operations)} design operations",
     )
+
+
+def _snapshot_feature_names(model: Optional[Any]) -> set:
+    """Snapshot the feature-name set for later diffing (atomic plans)."""
+    if model is None:
+        return set()
+    return set(walk_feature_names(model))
+
+
+_ROLLBACK_LIST_CAP = 200  # keep responses/logs bounded under pathological trees
+
+
+def _cap_names(names: List[str]) -> List[str]:
+    if len(names) > _ROLLBACK_LIST_CAP:
+        return names[:_ROLLBACK_LIST_CAP] + [f"…and {len(names) - _ROLLBACK_LIST_CAP} more"]
+    return names
+
+
+def _delete_new_features(
+    sw_app: SolidWorksApp, before: set
+) -> tuple:
+    """Delete every feature added after the snapshot, in reverse tree order.
+
+    Selection tries BODYFEATURE first and SKETCH second — real-machine
+    evidence (T10): a plate step creates a sketch plus an extrusion, and
+    SelectByID2 only resolves sketches under the "SKETCH" type (an empty
+    type string does not wildcard).
+    Returns ``(deleted_names, warning)``; both are capped so a pathological
+    tree cannot explode the response payload; the warning never masks the
+    original plan error.
+    """
+    deleted: List[str] = []
+    try:
+        model = sw_app.get_active_document()
+        if model is None:
+            return deleted, None
+        new_names = [n for n in walk_feature_names(model) if n not in before]
+        for name in reversed(new_names):
+            picked = False
+            for type_string in ("BODYFEATURE", "SKETCH"):
+                model.ClearSelection2(True)
+                picked = model.Extension.SelectByID2(
+                    name, type_string, 0, 0, 0, False, 0, pythoncom.Nothing, 0
+                )
+                if picked:
+                    break
+            if not picked:
+                continue
+            call_or_value(model, "EditDelete")
+            deleted.append(name)
+        remaining = [n for n in walk_feature_names(model) if n not in before]
+        warning = (
+            "rollback incomplete, "
+            f"{len(remaining)} feature(s) left in tree: {_cap_names(remaining)}"
+            if remaining
+            else None
+        )
+        return _cap_names(deleted), warning
+    except Exception as exc:
+        logger.exception("Design-plan rollback failed")
+        return _cap_names(deleted), f"rollback error: {exc}"

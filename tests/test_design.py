@@ -293,5 +293,224 @@ class TestDesignPlanNewOperations(unittest.TestCase):
         )
 
 
+class RollbackFeature:
+    def __init__(self, name, next_feature=None):
+        self.Name = name
+        self._next = next_feature
+
+    @property
+    def GetNextFeature(self):
+        return self._next
+
+
+class RollbackModel:
+    """Mutable feature tree + deletion tracking for atomic-plan tests."""
+
+    def __init__(self, initial_names=("原点",)):
+        self._names = list(initial_names)
+        self.deleted = []
+        self.picked = True
+
+    def _chain(self):
+        head = None
+        for name in reversed(self._names):
+            head = RollbackFeature(name, head)
+        return head
+
+    def FirstFeature(self):
+        return self._chain()
+
+    def ClearSelection2(self, all):
+        pass
+
+    @property
+    def EditDelete(self):
+        if getattr(self, "_pending", None):
+            self._names.remove(self._pending)
+            self.deleted.append(self._pending)
+            self._pending = None
+        return None
+
+    @property
+    def Extension(self):
+        model = self
+
+        class _Ext:
+            def SelectByID2(self, name, type_, *args):
+                # 实机行为：非草图特征以 BODYFEATURE 选中，草图以 SKETCH 选中
+                assert type_ in ("BODYFEATURE", "SKETCH")
+                sketch = name.startswith("草图")
+                ok = (
+                    model.picked
+                    and name in model._names
+                    and ((type_ == "SKETCH") == sketch)
+                )
+                model._pending = name if ok else None
+                return ok
+
+        return _Ext()
+
+
+class RollbackSolidWorks(FakeSolidWorks):
+    def __init__(self, model):
+        self.model = model
+
+    def get_active_document(self):
+        return self.model
+
+
+class TestDesignPlanAtomic(unittest.TestCase):
+    @patch("solidworks_mcp.solidworks_api.design.create_new_part")
+    @patch("solidworks_mcp.solidworks_api.design.cut_round_hole")
+    @patch("solidworks_mcp.solidworks_api.design.create_plate")
+    def test_failed_plan_rolls_back_new_features_in_reverse(
+        self, create_plate, cut_round_hole, create_new_part
+    ):
+        model = RollbackModel()
+        sw = RollbackSolidWorks(model)
+        create_new_part.return_value = success_response({}, "new")
+        # plate 成功后树里多草图+凸台两个特征（真实行为：plate 创建草图与拉伸）
+        create_plate.side_effect = lambda *a, **k: (
+            model._names.extend(["草图3", "凸台-拉伸2"]),
+            success_response({}, "plate"),
+        )[1]
+        cut_round_hole.return_value = error_response("hole exploded", code="SW_API_ERROR")
+
+        result = execute_design_plan(
+            sw,
+            [
+                {"type": "new_part"},
+                {"type": "plate", "width": 100, "depth": 60, "height": 8},
+                {"type": "hole", "diameter": 8, "depth": 5},
+            ],
+        )
+
+        self.assertFalse(result["success"])
+        data = result["data"]
+        self.assertEqual(data["applied"], [1, 2])
+        self.assertEqual(data["failed"], 3)
+        # 逆序：凸台（BODYFEATURE）先删，草图（SKETCH）后删
+        self.assertEqual(data["rolled_back"], ["凸台-拉伸2", "草图3"])
+        self.assertEqual(model.deleted, ["凸台-拉伸2", "草图3"])
+        # 树回到快照状态：新增特征全部清除
+        self.assertEqual(model._names, ["原点"])
+
+    @patch("solidworks_mcp.solidworks_api.design.cut_round_hole")
+    def test_atomic_false_keeps_legacy_no_rollback(self, cut_round_hole):
+        model = RollbackModel()
+        model._names.append("残留凸台")
+        sw = RollbackSolidWorks(model)
+        cut_round_hole.return_value = error_response("boom", code="SW_API_ERROR")
+
+        result = execute_design_plan(
+            sw,
+            [{"type": "hole", "diameter": 8, "depth": 5}],
+            atomic=False,
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["data"].get("rolled_back"), None)
+        self.assertEqual(model.deleted, [])
+        self.assertIn("残留凸台", model._names)
+
+    @patch("solidworks_mcp.solidworks_api.design.create_new_part")
+    @patch("solidworks_mcp.solidworks_api.design.cut_round_hole")
+    def test_rollback_failure_becomes_warning_without_masking(
+        self, cut_round_hole, create_new_part
+    ):
+        model = RollbackModel()
+        model.picked = False  # SelectByID2 失败 → 回滚不完整
+        # 第 1 步成功并在树中加特征；第 2 步失败触发回滚但删不掉
+        create_new_part.side_effect = lambda *a, **k: (
+            model._names.append("删不掉的特征"),
+            success_response({}, "new"),
+        )[1]
+        sw = RollbackSolidWorks(model)
+        cut_round_hole.return_value = error_response("boom", code="SW_API_ERROR")
+
+        result = execute_design_plan(
+            sw,
+            [
+                {"type": "new_part"},
+                {"type": "hole", "diameter": 8, "depth": 5},
+            ],
+        )
+
+        self.assertFalse(result["success"])
+        self.assertIn("boom", result["message"])  # 原错未被掩盖
+        warning = result["data"].get("rollback_warning", "")
+        self.assertIn("rollback", warning)
+        self.assertIn("删不掉的特征", warning)
+        self.assertEqual(result["data"]["rolled_back"], [])
+
+
+class TestWalkFeatureNamesHardening(unittest.TestCase):
+    """Regression: a Mock/degenerate proxy must not be walked as a tree.
+
+    Real-machine incident (T10): walking a Mock for MAX_FEATURE_WALK steps
+    made mock's call bookkeeping propagate each call up its parent chain —
+    O(n^2) records, gigabytes of memory, minutes of CPU. Any object whose
+    features lack string names must stop the walk immediately.
+    """
+
+    def test_walk_stops_on_non_string_feature_names(self):
+        from unittest.mock import Mock
+
+        from solidworks_mcp.solidworks_api.geometry import walk_feature_names
+
+        self.assertEqual(walk_feature_names(Mock()), [])
+
+        class DegenerateFeature:
+            Name = 123  # not a str
+
+            def GetNextFeature(self):
+                return self
+
+        class DegenerateModel:
+            def FirstFeature(self):
+                return DegenerateFeature()
+
+        self.assertEqual(walk_feature_names(DegenerateModel()), [])
+
+        # 正常形态不受影响：字符串名链照常走完
+        class StringFeature:
+            def __init__(self, name, next_feature=None):
+                self.Name = name
+                self._next = next_feature
+
+            @property
+            def GetNextFeature(self):
+                return self._next
+
+        class StringModel:
+            def FirstFeature(self):
+                return StringFeature("A", StringFeature("B"))
+
+        self.assertEqual(walk_feature_names(StringModel()), ["A", "B"])
+
+    def test_plan_with_mock_app_returns_promptly(self):
+        # Replicates the exact test that used to hang the suite.
+        checks = [
+            execute_design_plan(Mock(), []),
+            execute_design_plan(Mock(), "box"),
+            execute_design_plan(Mock(), [{"type": "loft"}]),
+            execute_design_plan(Mock(), [{"type": "box", "depth": 2, "height": 3}]),
+        ]
+        for result in checks:
+            self.assertFalse(result["success"])
+
+        # Failure path with a Mock document must also complete without
+        # exploding: no walkable names -> empty snapshot -> no rollback.
+        with patch(
+            "solidworks_mcp.solidworks_api.design.create_plate",
+            return_value=error_response("x", code="SW_API_ERROR"),
+        ):
+            failed = execute_design_plan(
+                Mock(), [{"type": "plate", "width": 1, "depth": 1, "height": 1}]
+            )
+        self.assertFalse(failed["success"])
+        self.assertEqual(failed["data"]["rolled_back"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

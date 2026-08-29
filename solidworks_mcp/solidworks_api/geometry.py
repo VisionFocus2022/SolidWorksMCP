@@ -30,28 +30,38 @@ def linspace(start: float, end: float, count: int) -> List[float]:
     return [start + (end - start) * i / (count - 1) for i in range(count)]
 
 
-def latest_feature_name(model: Any, max_features: int = MAX_FEATURE_WALK) -> Optional[str]:
-    """Walk the feature tree and return the name of the last feature.
+def walk_feature_names(model: Any, max_features: int = MAX_FEATURE_WALK) -> List[str]:
+    """Walk the feature tree in order and return the feature names.
 
     The walk is bounded by ``max_features`` so a non-terminating
     GetNextFeature chain degrades into a warning instead of unbounded
-    memory growth.
+    memory growth. A feature whose ``Name`` is not a string (e.g. a test
+    double or degenerate proxy) stops the walk immediately: real feature
+    names are always strings, and walking mock objects costs quadratic
+    call-bookkeeping (T10 memory-explosion incident).
     """
-    latest = None
+    names: List[str] = []
     feat = call_or_value(model, "FirstFeature")
-    steps = 0
     while feat is not None:
-        latest = feat.Name
-        steps += 1
-        if steps >= max_features:
+        name = getattr(feat, "Name", None)
+        if not isinstance(name, str):
+            break
+        names.append(name)
+        if len(names) >= max_features:
             logger.warning(
-                "Feature walk hit the %s-step ceiling; returning the "
-                "latest name seen. The model or proxy may be degenerate.",
+                "Feature walk hit the %s-step ceiling; the model or proxy "
+                "may be degenerate.",
                 max_features,
             )
             break
         feat = call_or_value(feat, "GetNextFeature")
-    return latest
+    return names
+
+
+def latest_feature_name(model: Any, max_features: int = MAX_FEATURE_WALK) -> Optional[str]:
+    """Return the name of the last feature in the tree (see walk_feature_names)."""
+    names = walk_feature_names(model, max_features)
+    return names[-1] if names else None
 
 
 def select_plane(
