@@ -77,6 +77,31 @@ def _model_title(model) -> str:
     return call_or_value(model, "GetTitle")
 
 
+def _open_doc6(app, file_path: str, doc_type: int) -> tuple:
+    """Open a document, tolerating typed wrappers that reject byref VARIANTs.
+
+    Makepy-generated wrappers coerce ``VT_BYREF|VT_I4`` parameters with
+    ``int()``, which raises TypeError on the pre-built VARIANTs used for
+    dynamic dispatch. The plain-int retry works there, and the wrapper then
+    bundles the byref out-params into the return value as a tuple.
+
+    Returns ``(model, error_code, warning_code)``.
+    """
+    errs, warns = _make_error_variants()
+    args = (normalize_path(file_path), doc_type, swOpenDocOptions_Silent, "")
+    try:
+        model = app.OpenDoc6(*args, errs, warns)
+        return model, errs.value, warns.value
+    except TypeError:
+        result = app.OpenDoc6(*args, 0, 0)
+        if not isinstance(result, tuple):
+            return result, 0, 0
+        model = result[0] if result else None
+        error_code = result[1] if len(result) > 1 and isinstance(result[1], int) else 0
+        warning_code = result[2] if len(result) > 2 and isinstance(result[2], int) else 0
+        return model, error_code, warning_code
+
+
 def open_document(
     sw_app: SolidWorksApp,
     file_path: str,
@@ -96,17 +121,9 @@ def open_document(
             )
 
         target_type = doc_type if doc_type is not None else _guess_document_type(file_path)
-        errs, warns = _make_error_variants()
-        model = sw_app.app.OpenDoc6(
-            normalize_path(file_path),
-            target_type,
-            swOpenDocOptions_Silent,
-            "",
-            errs,
-            warns,
-        )
+        model, error_code, warning_code = _open_doc6(sw_app.app, file_path, target_type)
         if model is None:
-            detail = _format_load_error(errs.value)
+            detail = _format_load_error(error_code)
             return error_response(f"Failed to open document: {file_path}. {detail}")
 
         return success_response(
@@ -114,8 +131,8 @@ def open_document(
                 "path": file_path,
                 "type": target_type,
                 "title": _model_title(model),
-                "errors": errs.value,
-                "warnings": warns.value,
+                "errors": error_code,
+                "warnings": warning_code,
             },
             message=f"Opened document: {os.path.basename(file_path)}",
         )
@@ -172,7 +189,15 @@ def import_step(
     sw_app: SolidWorksApp,
     file_path: str,
 ) -> dict:
-    """Import a STEP (.step/.stp) file into SolidWorks."""
+    """Import a STEP (.step/.stp) file into SolidWorks.
+
+    Foreign formats go through the dedicated ``LoadFile4`` loader with
+    ``GetImportFileData``: real-machine evidence (T1, 2026-08-29) shows
+    ``OpenDoc6`` rejects STEP files with a native-document load error even
+    when 3D Interconnect is enabled. ``LoadFile4`` also requires an
+    absolute path. Typed wrappers bundle the byref error out-param into
+    the return value as ``(model, error_code)``.
+    """
     try:
         valid, msg = validate_path(file_path, must_exist=True)
         if not valid:
@@ -182,25 +207,24 @@ def import_step(
         if ext not in (".step", ".stp"):
             return error_response(f"Expected .step or .stp file, got: {ext}")
 
-        errs, warns = _make_error_variants()
-        model = sw_app.app.OpenDoc6(
-            normalize_path(file_path),
-            swDocPART,
-            swOpenDocOptions_Silent,
-            "",
-            errs,
-            warns,
-        )
+        path = normalize_path(file_path)
+        import_data = sw_app.app.GetImportFileData(path)
+        result = sw_app.app.LoadFile4(path, "", import_data, 0)
+        if isinstance(result, tuple):
+            model = result[0] if result else None
+            error_code = result[1] if len(result) > 1 and isinstance(result[1], int) else 0
+        else:
+            model, error_code = result, 0
         if model is None:
-            detail = _format_load_error(errs.value)
-            return error_response(f"Failed to import STEP: {file_path}. {detail}")
+            return error_response(
+                f"Failed to import STEP: {file_path}. load error code {error_code}"
+            )
 
         return success_response(
             data={
                 "path": file_path,
                 "title": _model_title(model),
-                "errors": errs.value,
-                "warnings": warns.value,
+                "errors": error_code,
             },
             message=f"Imported STEP: {os.path.basename(file_path)}",
         )

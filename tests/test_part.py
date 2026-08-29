@@ -7,6 +7,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from solidworks_mcp.solidworks_api.app import SolidWorksNotRunningError
 from solidworks_mcp.solidworks_api.features import get_features
 from solidworks_mcp.solidworks_api.part import (
     _create_circle_sketch,
@@ -162,6 +163,59 @@ class TestConeCreation(unittest.TestCase):
     @patch("solidworks_mcp.solidworks_api.part._get_or_create_part", return_value=(Mock(), True))
     def test_create_cone_reports_extrusion_failure(self, _part, _plane, _sketch, _extrude):
         self.assertIn("Drafted", create_cone(Mock(), 20, 10, 30)["message"])
+
+
+class TestConeEdgeCases(unittest.TestCase):
+    @patch("solidworks_mcp.solidworks_api.part.validate_output_file", return_value=(False, "bad path"))
+    def test_create_cone_rejects_invalid_save_path(self, _validate):
+        self.assertEqual(
+            create_cone(Mock(), 20, 10, 30, "cone.sldprt")["error"]["code"],
+            "INVALID_OUTPUT_PATH",
+        )
+
+    @patch("solidworks_mcp.solidworks_api.part._select_plane", return_value=None)
+    @patch("solidworks_mcp.solidworks_api.part._get_or_create_part", return_value=(Mock(), True))
+    def test_create_cone_reports_missing_reference_plane(self, _part, _plane):
+        self.assertIn("reference plane", create_cone(Mock(), 20, 10, 30)["message"])
+
+    @patch("solidworks_mcp.solidworks_api.part.ensure_sink_path")
+    @patch("solidworks_mcp.solidworks_api.part.validate_output_file", return_value=(True, ""))
+    @patch("solidworks_mcp.solidworks_api.part._extrude_draft_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._create_circle_sketch")
+    @patch("solidworks_mcp.solidworks_api.part._select_plane", return_value="Front Plane")
+    @patch("solidworks_mcp.solidworks_api.part._get_or_create_part")
+    def test_create_cone_reports_sink_and_save_failures(
+        self, get_part, _plane, _sketch, extrude, _validate, sink
+    ):
+        model = Mock()
+        get_part.return_value = (model, True)
+        extrude.return_value = SimpleNamespace(Name="Boss")
+        sink.return_value = (False, "bad sink", None)
+        self.assertIn("bad sink", create_cone(Mock(), 20, 10, 30, "cone.sldprt")["message"])
+        sink.return_value = (True, "", "cone.sldprt")
+        model.SaveAs3.return_value = 9
+        self.assertIn("SaveAs3 failed", create_cone(Mock(), 20, 10, 30, "cone.sldprt")["message"])
+
+    def test_create_cone_wraps_com_and_not_running_errors(self):
+        sw = Mock()
+        sw.get_active_document.side_effect = SolidWorksNotRunningError("down")
+        self.assertIn("down", create_cone(sw, 20, 10, 30)["message"])
+        sw.get_active_document.side_effect = RuntimeError("COM")
+        self.assertIn("Failed to create cone", create_cone(sw, 20, 10, 30)["message"])
+
+
+class TestMassPropertiesEdgeCases(unittest.TestCase):
+    def test_mass_properties_handles_missing_mass_object_and_not_running(self):
+        sw = Mock()
+        sw.get_active_document.side_effect = SolidWorksNotRunningError("down")
+        self.assertIn("down", get_mass_properties(sw)["message"])
+
+        sw = Mock()
+        model = Mock()
+        model.GetBodies2.return_value = [object()]
+        model.Extension.CreateMassProperty.return_value = None
+        sw.get_active_document.return_value = model
+        self.assertIn("Could not create", get_mass_properties(sw)["message"])
 
 
 class TestPartInspection(unittest.TestCase):

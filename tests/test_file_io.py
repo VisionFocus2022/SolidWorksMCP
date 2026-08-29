@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -16,6 +17,24 @@ from solidworks_mcp.solidworks_api.file_io import (
     import_step,
     open_document,
 )
+
+
+def _typed_wrapper_open_doc6(model, error_code=0, warning_code=0):
+    """Simulate makepy wrappers rejecting byref-VARIANT OpenDoc6 arguments.
+
+    On the plain-int retry the wrapper bundles the byref out-params into the
+    return value, so callers receive ``(retval, errors, warnings)``.
+    """
+
+    def open_doc6(*args):
+        if not all(isinstance(arg, int) for arg in args[4:6]):
+            raise TypeError(
+                "int() argument must be a string, a bytes-like object "
+                "or a real number, not 'VARIANT'"
+            )
+        return (model, error_code, warning_code)
+
+    return open_doc6
 
 
 class TestOpenDocument(unittest.TestCase):
@@ -69,6 +88,40 @@ class TestOpenDocument(unittest.TestCase):
     def test_open_rejects_invalid_path(self, _validate):
         self.assertEqual(open_document(Mock(), "bad.sldprt")["message"], "unsafe")
 
+    @patch("solidworks_mcp.solidworks_api.file_io.validate_path", return_value=(True, ""))
+    @patch("solidworks_mcp.solidworks_api.file_io._make_error_variants")
+    def test_open_retries_with_plain_ints_when_typed_wrapper_rejects_variants(
+        self, variants, _validate
+    ):
+        # Real-machine evidence (T1, 2026-08-29): makepy-generated wrappers
+        # coerce VT_BYREF|VT_I4 params with int(), which raises TypeError on
+        # the pre-built VARIANTs used for dynamic dispatch.
+        variants.return_value = (SimpleNamespace(value=0), SimpleNamespace(value=0))
+        model = SimpleNamespace(GetTitle=lambda: "Part1")
+        sw = Mock()
+        sw.app.OpenDoc6.side_effect = _typed_wrapper_open_doc6(model)
+
+        result = open_document(sw, r"C:\models\part.sldprt")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["title"], "Part1")
+        self.assertEqual(sw.app.OpenDoc6.call_count, 2)
+        self.assertEqual(sw.app.OpenDoc6.call_args_list[-1].args[4:6], (0, 0))
+
+    @patch("solidworks_mcp.solidworks_api.file_io.validate_path", return_value=(True, ""))
+    @patch("solidworks_mcp.solidworks_api.file_io._make_error_variants")
+    def test_open_reports_load_error_from_typed_wrapper_tuple(self, variants, _validate):
+        variants.return_value = (SimpleNamespace(value=0), SimpleNamespace(value=0))
+        sw = Mock()
+        sw.app.OpenDoc6.side_effect = _typed_wrapper_open_doc6(
+            None, error_code=FILE_LOAD_ERROR_NON_SW
+        )
+
+        result = open_document(sw, r"C:\models\part.step")
+
+        self.assertFalse(result["success"])
+        self.assertIn("3DInterconnect", result["message"])
+
 
 class TestCloseDocument(unittest.TestCase):
     def test_close_without_save_skips_save_and_reports_title(self):
@@ -114,14 +167,33 @@ class TestImportExport(unittest.TestCase):
         self.assertIn("Expected .step", result["message"])
 
     @patch("solidworks_mcp.solidworks_api.file_io.validate_path", return_value=(True, ""))
-    @patch("solidworks_mcp.solidworks_api.file_io._make_error_variants")
-    def test_import_step_success_and_failure(self, variants, _validate):
-        variants.return_value = (SimpleNamespace(value=0), SimpleNamespace(value=0))
+    def test_import_step_success_and_failure(self, _validate):
         sw = Mock()
-        sw.app.OpenDoc6.return_value = SimpleNamespace(GetTitle="Imported")
+        sw.app.GetImportFileData.return_value = object()
+        sw.app.LoadFile4.return_value = (
+            SimpleNamespace(GetTitle=lambda: "Imported"),
+            0,
+        )
         self.assertTrue(import_step(sw, "part.step")["success"])
-        sw.app.OpenDoc6.return_value = None
+        sw.app.LoadFile4.return_value = (None, 1)
         self.assertFalse(import_step(sw, "part.stp")["success"])
+
+    @patch("solidworks_mcp.solidworks_api.file_io.validate_path", return_value=(True, ""))
+    def test_import_step_uses_foreign_file_loader_with_absolute_path(self, _validate):
+        sw = Mock()
+        sw.app.GetImportFileData.return_value = object()
+        sw.app.LoadFile4.return_value = (
+            SimpleNamespace(GetTitle=lambda: "Imported"),
+            0,
+        )
+
+        result = import_step(sw, "part.step")
+
+        self.assertTrue(result["success"])
+        load_args = sw.app.LoadFile4.call_args.args
+        self.assertTrue(os.path.isabs(load_args[0]))
+        self.assertEqual(load_args[2], sw.app.GetImportFileData.return_value)
+        sw.app.OpenDoc6.assert_not_called()
 
     def test_export_validates_output_and_active_document(self):
         with patch(
