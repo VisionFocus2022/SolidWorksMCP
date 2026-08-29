@@ -171,21 +171,38 @@ def main() -> int:
     e2e.step("file_io.import_step", file_io.import_step, sw, str(WORK_DIR / "e2e_box.step"))
     e2e.step("file_io.close_document4", file_io.close_document, sw, False)
 
-    # --- 装配链（可选段：当前无新建装配文档的 API，见 T11）---
-    from solidworks_mcp.solidworks_api import assembly
-    from solidworks_mcp.utils.com import call_or_value
+    # --- 装配链（T11 全自动段）：重叠→干涉非空；分离→空；BOM 聚合 ---
+    from solidworks_mcp.solidworks_api import assembly as asm_api
 
-    active = sw.get_active_document()
-    # GetType 在实机是属性（零参 COM 成员铁律），须经 call_or_value 取值
-    doc_type = call_or_value(active, "GetType") if active is not None else 0
-    if doc_type == 2:  # swDocASSEMBLY
-        e2e.step("assembly.add_component", assembly.add_component, sw, box_path, 0.0, 0.0, 0.0)
-        e2e.step("assembly.add_component2", assembly.add_component, sw, cyl_path, 30.0, 0.0, 0.0)
-        e2e.step("assembly.get_components", assembly.get_components, sw)
-        e2e.step("file_io.close_document5", file_io.close_document, sw, True)
-    else:
-        e2e.steps.append({"name": "assembly.chain", "success": True, "skipped": True,
-                          "note": "无活动装配文档且无新建装配 API（T11 将补 create_assembly）"})
+    asm_path = str(WORK_DIR / "e2e_asm.SLDASM")
+    e2e.step("assembly.new", asm_api.new_assembly, sw, asm_path, True)
+    e2e.step("assembly.add_component1", asm_api.add_component, sw, box_path, 0.0, 0.0, 0.0)
+    e2e.step("assembly.add_component2", asm_api.add_component, sw, box_path, 10.0, 0.0, 0.0)
+    overlap = e2e.step("assembly.check_interference1", asm_api.check_interference, sw)
+    overlap_ok = bool((overlap.get("data") or {}).get("has_interference"))
+    e2e.steps.append({"name": "assembly.expect_overlap", "success": overlap_ok,
+                      "error": None if overlap_ok else {"code": "NO_INTERFERENCE", "details": overlap.get("message")}})
+    bom = e2e.step("assembly.get_bom1", asm_api.get_bom, sw)
+    box_count = next((i["count"] for i in (bom.get("data") or {}).get("items") or []
+                      if i.get("name") == "e2e_box"), 0)
+    e2e.steps.append({"name": "assembly.expect_bom_2x", "success": box_count == 2,
+                      "error": None if box_count == 2 else {"code": "BOM_MISMATCH", "details": f"count={box_count}"}})
+
+    e2e.step("assembly.new2", asm_api.new_assembly, sw)
+    e2e.step("assembly.add_component3", asm_api.add_component, sw, box_path, 0.0, 0.0, 0.0)
+    e2e.step("assembly.add_component4", asm_api.add_component, sw, cyl_path, 200.0, 0.0, 0.0)
+    separated = e2e.step("assembly.check_interference2", asm_api.check_interference, sw)
+    sep_ok = not bool((separated.get("data") or {}).get("has_interference"))
+    e2e.steps.append({"name": "assembly.expect_separated", "success": sep_ok,
+                      "error": None if sep_ok else {"code": "UNEXPECTED_INTERFERENCE", "details": None}})
+    e2e.step("assembly.get_bom2", asm_api.get_bom, sw)
+    # 组件预开+装配引用都会锁文件，段末全量释放（含保存装配演示档）
+    try:
+        sw.app.CloseAllDocuments(True)
+        e2e.steps.append({"name": "assembly.cleanup", "success": True})
+    except Exception as exc:
+        e2e.steps.append({"name": "assembly.cleanup", "success": False,
+                          "error": {"code": "EXCEPTION", "details": repr(exc)}})
 
     # --- 工程图链（T12）：建图→投三视图→入尺寸→导 PDF/PNG---
     from solidworks_mcp.solidworks_api import drawing as drawing_api

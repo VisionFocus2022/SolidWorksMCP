@@ -15,7 +15,14 @@ from pydantic import Field, ValidationError
 from solidworks_mcp import __version__
 from solidworks_mcp.config import get_config
 from solidworks_mcp.solidworks_api.app import get_solidworks_app
-from solidworks_mcp.solidworks_api.assembly import add_component, add_mate, get_components
+from solidworks_mcp.solidworks_api.assembly import (
+    add_component,
+    add_mate,
+    check_interference,
+    get_bom,
+    get_components,
+    new_assembly,
+)
 from solidworks_mcp.solidworks_api.design import (
     create_new_part,
     create_plate,
@@ -96,7 +103,9 @@ NonNegativeMM = Annotated[
     Field(ge=0, allow_inf_nan=False, description="Non-negative length in millimeters"),
 ]
 NonEmptyString = Annotated[str, Field(min_length=1)]
-MateType = Literal["coincident", "concentric", "distance"]
+MateType = Literal[
+    "coincident", "concentric", "distance", "tangent", "angle", "width"
+]
 EntityType = Literal["AUTO", "FACE", "PLANE", "AXIS", "EDGE", "VERTEX"]
 
 
@@ -608,6 +617,35 @@ def solidworks_part_add_configuration(
         lambda sw: add_configuration(sw, name),
         launch_if_needed,
     )
+
+
+@mcp.tool(title="New assembly", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_assembly_new(
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Create a new empty assembly document (GB template), optionally saving it."""
+    return _call_connected(
+        lambda sw: new_assembly(sw, save_path, overwrite_confirm),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Check interference", annotations=READ_ONLY, structured_output=True)
+def solidworks_assembly_check_interference(
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Report volume and components of every interference in the active assembly."""
+    return _call_connected(check_interference, launch_if_needed)
+
+
+@mcp.tool(title="Get BOM", annotations=READ_ONLY, structured_output=True)
+def solidworks_assembly_get_bom(
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Aggregate a bill of materials (part, configuration, instance count)."""
+    return _call_connected(get_bom, launch_if_needed)
 
 
 @mcp.tool(title="Create drawing from part", annotations=STATE_CHANGE, structured_output=True)

@@ -19,7 +19,7 @@ class TestServerRegistration(unittest.TestCase):
         tools = mcp._tool_manager.list_tools()
         resources = mcp._resource_manager.list_resources()
         prompts = mcp._prompt_manager.list_prompts()
-        self.assertEqual(len(tools), 49)
+        self.assertEqual(len(tools), 52)
         self.assertEqual(len(resources), 3)
         self.assertEqual(len(prompts), 1)
 
@@ -56,7 +56,7 @@ class TestServerRegistration(unittest.TestCase):
         tool = mcp._tool_manager.get_tool("solidworks_assembly_add_mate")
         self.assertEqual(
             tool.parameters["properties"]["mate_type"]["enum"],
-            ["coincident", "concentric", "distance"],
+            ["coincident", "concentric", "distance", "tangent", "angle", "width"],
         )
 
 

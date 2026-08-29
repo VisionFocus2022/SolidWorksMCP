@@ -14,8 +14,13 @@ from __future__ import annotations
 import ctypes
 import unittest
 import ctypes.wintypes as wt
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
+from solidworks_mcp.solidworks_api.assembly import (
+    check_interference,
+    get_bom,
+    new_assembly,
+)
 from solidworks_mcp.solidworks_api.decorations import (
     apply_chamfer,
     apply_fillet,
@@ -149,6 +154,20 @@ class TestBareMockTolerance(unittest.TestCase):
             self.assertIsInstance(result, dict)
             self.assertIn("success", result)
 
+    def test_assembly_entry_points(self):
+        # interference/bom bail at the doc-type check; new_assembly bails at
+        # the missing template (patched away) before touching NewDocument.
+        sw = Mock()
+        with patch(
+            "solidworks_mcp.solidworks_api.assembly.get_assembly_template",
+            return_value=None,
+        ):
+            self.assertFalse(new_assembly(sw)["success"])
+        for call in (lambda: check_interference(sw), lambda: get_bom(sw)):
+            result = call()
+            self.assertIsInstance(result, dict)
+            self.assertIn("success", result)
+
     def test_memory_delta_stays_bounded(self):
         """The whole battery must not move the process RSS measurably."""
         before = _rss_mb()
@@ -157,6 +176,7 @@ class TestBareMockTolerance(unittest.TestCase):
         self.test_dimension_walk_stops_on_non_string_full_name()
         self.test_plan_failure_path_on_mock_document()
         self.test_drawing_entry_points()
+        self.test_assembly_entry_points()
         delta = _rss_mb() - before
         self.assertLess(
             delta,

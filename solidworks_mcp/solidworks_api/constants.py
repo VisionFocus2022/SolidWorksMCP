@@ -32,7 +32,10 @@ THREAD_SPECS = {
 # Mate types (AddMate5)
 swMateCOINCIDENT = 0
 swMateCONCENTRIC = 1
+swMateTANGENT = 4
 swMateDISTANCE = 5
+swMateANGLE = 6
+swMateWIDTH = 17
 
 # Feature suppression states (SetSuppression2)
 swFeatureSuppressed = 0
