@@ -73,7 +73,7 @@ class E2E:
 
 
 def main() -> int:
-    from solidworks_mcp.solidworks_api import design, features, file_io, part
+    from solidworks_mcp.solidworks_api import design, features, file_io, measure, part
     from solidworks_mcp.solidworks_api.app import get_solidworks_app
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
@@ -103,6 +103,8 @@ def main() -> int:
     e2e.step("design.cut_round_hole", design.cut_round_hole, sw, 8.0, 0.0, 0.0, "top", None, True)
     e2e.step("features.set_feature_suppression", features.set_feature_suppression, sw, "E2E_Boss", False)
     e2e.step("features.get_feature_details", features.get_feature_details, sw)
+    e2e.step("measure.get_bounding_box", measure.get_bounding_box, sw)
+    e2e.step("measure.measure_distance", measure.measure_distance, sw, [0.0, 0.0, 0.0], [60.0, 40.0, 0.0])
     e2e.step("part.get_mass_properties", part.get_mass_properties, sw)
     e2e.step("file_io.export_step", file_io.export_step, sw, str(WORK_DIR / "e2e_box.step"), True)
     e2e.step("file_io.export_stl", file_io.export_stl, sw, str(WORK_DIR / "e2e_box.stl"), True)

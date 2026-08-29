@@ -36,6 +36,7 @@ from solidworks_mcp.solidworks_api.file_io import (
     import_step,
     open_document,
 )
+from solidworks_mcp.solidworks_api.measure import get_bounding_box, measure_distance
 from solidworks_mcp.solidworks_api.part import (
     create_box,
     create_cone,
@@ -667,6 +668,27 @@ def solidworks_features_get_details(
         lambda sw: get_feature_details(sw, feature_name),
         launch_if_needed,
     )
+
+
+@mcp.tool(title="Measure distance between two points", annotations=READ_ONLY, structured_output=True)
+def solidworks_measure_distance(
+    point1: List[FiniteMM],
+    point2: List[FiniteMM],
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Distance (mm) between two model-space [x, y, z] points given in mm."""
+    return _call_connected(
+        lambda sw: measure_distance(sw, point1, point2),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Get bounding box", annotations=READ_ONLY, structured_output=True)
+def solidworks_get_bounding_box(
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Merged solid-body bounding box in mm (min/max/size/center)."""
+    return _call_connected(get_bounding_box, launch_if_needed)
 
 
 @mcp.tool(title="Rename feature", annotations=DESTRUCTIVE, structured_output=True)
