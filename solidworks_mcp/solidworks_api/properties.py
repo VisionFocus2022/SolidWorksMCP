@@ -234,3 +234,164 @@ def add_configuration(sw_app: SolidWorksApp, name: str) -> dict:
     except Exception as exc:
         logger.exception("Failed to add configuration")
         return error_response(f"Failed to add configuration: {exc}")
+
+
+def _wrap_equation_mgr_static(mgr: Any) -> Any:
+    """Wrap the dynamic EquationMgr in its makepy static class.
+
+    Probe 2026-08-30: ``SetEquation``/``Delete`` are only reachable through
+    the typed ``IEquationMgr`` (dynamic dispatch cannot reach the indexed
+    propput); same wrap discipline as drawing's ``_wrap_dimension_static``.
+    """
+    try:
+        from win32com.client import gencache
+
+        mods = gencache.GetModuleForProgID("SldWorks.Application")
+        if mods is None:
+            return None
+        return mods.IEquationMgr(mgr._oleobj_)
+    except Exception:
+        logger.debug("IEquationMgr static wrap failed", exc_info=True)
+        return None
+
+
+def edit_equation(sw_app: SolidWorksApp, index: int, new_text: str) -> dict:
+    """Replace the equation text at a zero-based index (N12).
+
+    Calls the typed ``IEquationMgr.SetEquation`` (probe 2026-08-30); the
+    judgement is the ``Equation(index)`` read-back, so a silently ignored
+    edit reads back as the old text and reports rejection.
+    """
+    try:
+        if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+            return error_response(
+                "index must be a non-negative integer", code="INVALID_PARAMETER"
+            )
+        if not new_text:
+            return error_response("new_text must be non-empty", code="INVALID_PARAMETER")
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+
+        mgr = call_or_value(model, "GetEquationMgr")
+        count = call_or_value(mgr, "GetCount") or 0
+        if index >= count:
+            return error_response(
+                f"index {index} out of range (0..{count - 1})",
+                code="INVALID_PARAMETER",
+            )
+        old_text = mgr.Equation(index)
+        target = _wrap_equation_mgr_static(mgr) or mgr
+        target.SetEquation(index, new_text)
+        if mgr.Equation(index) != new_text:
+            return error_response(
+                f"SolidWorks rejected the new equation '{new_text}'",
+                code="SW_API_ERROR",
+            )
+        call_or_value(model, "EditRebuild3")
+        return success_response(
+            data={"index": index, "old_text": old_text, "new_text": new_text},
+            message=f"Equation {index} edited",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to edit equation")
+        return error_response(f"Failed to edit equation: {exc}")
+
+
+def delete_equation(sw_app: SolidWorksApp, index_or_text) -> dict:
+    """Delete an equation by zero-based index or exact text (N12).
+
+    The judgement is the ``GetCount`` read-back (probe 2026-08-30:
+    ``Delete``'s return value carries no semantics).
+    """
+    try:
+        if isinstance(index_or_text, bool) or not isinstance(index_or_text, (int, str)):
+            return error_response(
+                "index_or_text must be a non-negative integer or equation text",
+                code="INVALID_PARAMETER",
+            )
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+
+        mgr = call_or_value(model, "GetEquationMgr")
+        count = call_or_value(mgr, "GetCount") or 0
+        if isinstance(index_or_text, str):
+            if not index_or_text:
+                return error_response(
+                    "index_or_text must be non-empty", code="INVALID_PARAMETER"
+                )
+            index = next(
+                (i for i in range(count) if mgr.Equation(i) == index_or_text),
+                None,
+            )
+            if index is None:
+                return error_response(
+                    f"No equation matches {index_or_text!r}",
+                    code="INVALID_PARAMETER",
+                )
+        else:
+            index = index_or_text
+            if index < 0 or index >= count:
+                return error_response(
+                    f"index {index} out of range (0..{count - 1})",
+                    code="INVALID_PARAMETER",
+                )
+
+        deleted_text = mgr.Equation(index)
+        target = _wrap_equation_mgr_static(mgr) or mgr
+        target.Delete(index)
+        if (call_or_value(mgr, "GetCount") or 0) != count - 1:
+            return error_response(
+                "SolidWorks refused to delete the equation", code="SW_API_ERROR"
+            )
+        return success_response(
+            data={"deleted": deleted_text, "remaining": count - 1},
+            message=f"Deleted equation {deleted_text!r}",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to delete equation")
+        return error_response(f"Failed to delete equation: {exc}")
+
+
+def activate_configuration(sw_app: SolidWorksApp, name: str) -> dict:
+    """Activate a named configuration (N12).
+
+    ``ShowConfiguration``'s return value is NOT trustworthy (probe
+    2026-08-30: it returns False even on success); the judgement is the
+    ``ConfigurationManager.ActiveConfiguration.Name`` read-back.
+    """
+    try:
+        if not name:
+            return error_response("name must be non-empty", code="INVALID_PARAMETER")
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+
+        configs = list(call_or_value(model, "GetConfigurationNames") or [])
+        if name not in configs:
+            return error_response(
+                f"Unknown configuration {name!r}; available: {configs}",
+                code="INVALID_PARAMETER",
+            )
+        model.ShowConfiguration(name)
+        cfg_mgr = call_or_value(model, "ConfigurationManager")
+        active = str(call_or_value(cfg_mgr, "ActiveConfiguration").Name)
+        if active != name:
+            return error_response(
+                f"SolidWorks refused to activate {name!r} (active: {active!r})",
+                code="SW_API_ERROR",
+            )
+        return success_response(
+            data={"active": name},
+            message=f"Configuration {name!r} activated",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to activate configuration")
+        return error_response(f"Failed to activate configuration: {exc}")

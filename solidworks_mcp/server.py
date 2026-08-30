@@ -7,7 +7,17 @@ import logging
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Annotated, Any, Callable, Dict, List, Literal, Optional, TypedDict
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    TypedDict,
+    Union,
+)
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -46,6 +56,7 @@ from solidworks_mcp.solidworks_api.features import (
     mirror_feature,
     rename_feature,
     set_dimension,
+    set_dimension_angle,
     set_feature_suppression,
 )
 from solidworks_mcp.solidworks_api.file_io import (
@@ -88,8 +99,11 @@ from solidworks_mcp.solidworks_api.pattern import (
     create_annular_pattern,
 )
 from solidworks_mcp.solidworks_api.properties import (
+    activate_configuration,
     add_configuration,
     add_equation,
+    delete_equation,
+    edit_equation,
     get_custom_properties,
     get_material,
     list_equations,
@@ -118,6 +132,10 @@ FiniteMM = Annotated[
 FiniteAngle = Annotated[
     float,
     Field(allow_inf_nan=False, description="Finite angle in degrees"),
+]
+SignedMM = Annotated[
+    float,
+    Field(allow_inf_nan=False, description="Signed finite length in millimeters (non-zero)"),
 ]
 NonNegativeMM = Annotated[
     float,
@@ -752,6 +770,46 @@ def solidworks_part_add_configuration(
     )
 
 
+@mcp.tool(title="Activate configuration", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_activate_configuration(
+    name: NonEmptyString,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Activate a named configuration (verified via ActiveConfiguration read-back)."""
+    return _call_connected(
+        lambda sw: activate_configuration(sw, name),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Edit equation", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_part_edit_equation(
+    index: Annotated[int, Field(ge=0)],
+    new_text: NonEmptyString,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Replace the equation text at a zero-based index (verified via read-back)."""
+    return _call_connected(
+        lambda sw: edit_equation(sw, index, new_text),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Delete equation", annotations=DESTRUCTIVE, structured_output=True)
+def solidworks_part_delete_equation(
+    index_or_text: Annotated[
+        Union[int, str],
+        Field(description="Zero-based equation index or exact equation text"),
+    ],
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Delete an equation by zero-based index or exact text (verified via GetCount)."""
+    return _call_connected(
+        lambda sw: delete_equation(sw, index_or_text),
+        launch_if_needed,
+    )
+
+
 @mcp.tool(title="Sheet-metal base flange", annotations=STATE_CHANGE, structured_output=True)
 def solidworks_sheet_metal_base_flange(
     width: PositiveMM,
@@ -1231,12 +1289,26 @@ def solidworks_features_get_details(
 @mcp.tool(title="Set dimension value", annotations=STATE_CHANGE, structured_output=True)
 def solidworks_dimension_set(
     dimension_full_name: NonEmptyString,
-    value_mm: PositiveMM,
+    value_mm: SignedMM,
+    configuration: Optional[NonEmptyString] = None,
     launch_if_needed: Optional[bool] = None,
 ) -> ToolResult:
-    """Set a length dimension (full name from features_get_details) in mm and rebuild."""
+    """Set a signed length dimension (mm) and rebuild; optional configuration name activates it first (per-configuration value)."""
     return _call_connected(
-        lambda sw: set_dimension(sw, dimension_full_name, value_mm),
+        lambda sw: set_dimension(sw, dimension_full_name, value_mm, configuration),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Set angle dimension", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_dimension_set_angle(
+    dimension_full_name: NonEmptyString,
+    value_deg: FiniteAngle,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Set an angle dimension in degrees (converted to radians on the wire) and rebuild."""
+    return _call_connected(
+        lambda sw: set_dimension_angle(sw, dimension_full_name, value_deg),
         launch_if_needed,
     )
 

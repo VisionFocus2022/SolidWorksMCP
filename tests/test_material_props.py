@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from solidworks_mcp.solidworks_api.properties import (
+    activate_configuration,
     add_configuration,
     add_equation,
+    delete_equation,
+    edit_equation,
     get_custom_properties,
     get_material,
     list_equations,
@@ -63,6 +67,16 @@ class EquationManager:
     def Value(self, index):
         return 50.0
 
+    def SetEquation(self, index, text):
+        # 探针 2026-08-30：强类型 IEquationMgr.SetEquation(i, text)，回读判据
+        self.equations[index] = text
+        return None
+
+    def Delete(self, index):
+        # 探针 2026-08-30：Delete(i) 返回值无语义，判据 = GetCount 回读
+        del self.equations[index]
+        return 2
+
 
 class Extension:
     def __init__(self, model):
@@ -78,6 +92,7 @@ class PropsModel:
     def __init__(self):
         self.cpm = PropertyManager()
         self.configs = ["默认"]
+        self.active_config = "默认"
         self.material = ""
         self.database = ""
         self.set_calls = []
@@ -88,6 +103,18 @@ class PropsModel:
     @property
     def GetConfigurationNames(self):
         return tuple(self.configs)
+
+    def ShowConfiguration(self, name):
+        # 探针 2026-08-30：返回值不可信（False 也能切换成功）
+        if name in self.configs:
+            self.active_config = name
+        return False
+
+    @property
+    def ConfigurationManager(self):
+        return SimpleNamespace(
+            ActiveConfiguration=SimpleNamespace(Name=self.active_config)
+        )
 
     def GetMaterialPropertyName2(self, config, database_ref):
         database_ref.value = self.database
@@ -223,6 +250,97 @@ class TestEquations(unittest.TestCase):
         self.assertFalse(list_equations(sw)["success"])
 
 
+class TestEquationEditDelete(unittest.TestCase):
+    def test_edit_then_read_back(self):
+        model = PropsModel()
+        mgr = model.GetEquationMgr
+        mgr.Add2(-1, '"x" = 50', True)
+        mgr.Add2(-1, '"y" = 60', True)
+        sw = _sw(model)
+
+        result = edit_equation(sw, 0, '"x" = 99')
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["old_text"], '"x" = 50')
+        self.assertEqual(result["data"]["new_text"], '"x" = 99')
+        self.assertEqual(list_equations(sw)["data"]["equations"][0]["text"], '"x" = 99')
+
+    def test_delete_by_index_and_by_text(self):
+        model = PropsModel()
+        mgr = model.GetEquationMgr
+        mgr.Add2(-1, '"x" = 50', True)
+        mgr.Add2(-1, '"y" = 60', True)
+        sw = _sw(model)
+
+        by_text = delete_equation(sw, '"x" = 50')
+        self.assertTrue(by_text["success"])
+        self.assertEqual(by_text["data"]["deleted"], '"x" = 50')
+
+        by_index = delete_equation(sw, 0)
+        self.assertTrue(by_index["success"])
+        self.assertEqual(list_equations(sw)["data"]["count"], 0)
+
+    def test_edit_delete_validation_and_mismatch(self):
+        model = PropsModel()
+        mgr = model.GetEquationMgr
+        mgr.Add2(-1, '"x" = 50', True)
+        sw = _sw(model)
+
+        self.assertEqual(
+            edit_equation(sw, 5, '"x" = 99')["error"]["code"],
+            "INVALID_PARAMETER",
+        )
+        self.assertEqual(
+            edit_equation(sw, 0, "")["error"]["code"], "INVALID_PARAMETER"
+        )
+        self.assertEqual(
+            delete_equation(sw, '"missing" = 1')["error"]["code"],
+            "INVALID_PARAMETER",
+        )
+        self.assertEqual(
+            delete_equation(sw, 9)["error"]["code"], "INVALID_PARAMETER"
+        )
+
+        # SetEquation 静默不改（SW 拒绝格式）→ 回读不匹配 = rejected
+        mgr.SetEquation = lambda i, t: None
+        result = edit_equation(sw, 0, '"x" = 99')
+        self.assertFalse(result["success"])
+        self.assertIn("rejected", result["message"])
+
+    def test_com_errors_are_structured(self):
+        sw = Mock()
+        sw.get_active_document.side_effect = RuntimeError("COM failed")
+        self.assertFalse(edit_equation(sw, 0, '"x" = 1')["success"])
+        self.assertFalse(delete_equation(sw, 0)["success"])
+
+
+class TestActivateConfiguration(unittest.TestCase):
+    def test_activate_reads_back_active_name(self):
+        model = PropsModel()
+        model.configs.append("E2E_CFG")
+        sw = _sw(model)
+
+        result = activate_configuration(sw, "E2E_CFG")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["active"], "E2E_CFG")
+
+    def test_unknown_configuration_reports_available(self):
+        model = PropsModel()
+        sw = _sw(model)
+        result = activate_configuration(sw, "不存在")
+        self.assertFalse(result["success"])
+        self.assertIn("默认", result["message"])
+        self.assertEqual(
+            activate_configuration(sw, "")["error"]["code"], "INVALID_PARAMETER"
+        )
+
+    def test_com_errors_are_structured(self):
+        sw = Mock()
+        sw.get_active_document.side_effect = RuntimeError("COM failed")
+        self.assertFalse(activate_configuration(sw, "X")["success"])
+
+
 class TestConfigurations(unittest.TestCase):
     def test_add_configuration(self):
         model = PropsModel()
@@ -264,6 +382,9 @@ class TestNotRunningPaths(unittest.TestCase):
             lambda: add_equation(sw, '"x" = 1'),
             lambda: list_equations(sw),
             lambda: add_configuration(sw, "X"),
+            lambda: activate_configuration(sw, "X"),
+            lambda: edit_equation(sw, 0, '"x" = 2'),
+            lambda: delete_equation(sw, 0),
         ]
         for call in calls:
             self.assertFalse(call()["success"])

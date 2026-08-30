@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import math
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from solidworks_mcp.solidworks_api.features import delete_feature, set_dimension
+from solidworks_mcp.solidworks_api.features import (
+    delete_feature,
+    set_dimension,
+    set_dimension_angle,
+)
 
 
 class Dimension:
@@ -42,6 +47,22 @@ class DimModel:
         self.delete_count = 0
         self.picked = True
         self.select_calls = []
+        self.shown_config = None
+
+    def ShowConfiguration(self, name):
+        # 探针 2026-08-30：组合通道（激活后 which=1 设配置特定值）
+        self.shown_config = name
+        return False
+
+    @property
+    def ConfigurationManager(self):
+        return SimpleNamespace(
+            ActiveConfiguration=SimpleNamespace(Name=self.shown_config or "默认")
+        )
+
+    @property
+    def GetConfigurationNames(self):
+        return tuple(getattr(self, "configs", ("默认",)))
 
     def FirstFeature(self):
         head = None
@@ -98,7 +119,7 @@ class TestSetDimension(unittest.TestCase):
         model = DimModel()
         sw = Mock()
         sw.get_active_document.return_value = model
-        for bad in (0, -5, float("nan")):
+        for bad in (0, float("nan"), float("inf")):
             self.assertEqual(
                 set_dimension(sw, "D1@Sketch1", bad)["error"]["code"],
                 "INVALID_PARAMETER",
@@ -108,6 +129,79 @@ class TestSetDimension(unittest.TestCase):
         result = set_dimension(sw, "D1@Sketch1", 30.0)
         self.assertFalse(result["success"])
         self.assertIn("rejected", result["message"])
+
+    def test_negative_values_are_signed_but_nonzero(self):
+        # N12：去 PositiveMM 约束 —— 偏移/对称尺寸需要负长度
+        model = DimModel()
+        sw = Mock()
+        sw.get_active_document.return_value = model
+
+        result = set_dimension(sw, "D1@Sketch1", -12.5)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(model.dimension.set_calls, [(-0.0125, 1, "")])
+
+    def test_set_dimension_with_configuration_activates_first(self):
+        # 探针 2026-08-30：SetSystemValue3(v, 3, names) 通道返回 0 但不生效；
+        # 组合通道 = ShowConfiguration(name) 后 which=1 设配置特定值
+        model = DimModel()
+        model.configs = ("默认", "CFG_B")
+        sw = Mock()
+        sw.get_active_document.return_value = model
+
+        result = set_dimension(sw, "D1@凸台-拉伸1", 50.0, configuration="CFG_B")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(model.shown_config, "CFG_B")
+        self.assertEqual(model.dimension.set_calls, [(0.05, 1, "")])
+        self.assertEqual(result["data"]["configuration"], "CFG_B")
+
+        # 未知配置在激活校验时被拒
+        model2 = DimModel()
+        model2.configs = ("默认",)
+        sw2 = Mock()
+        sw2.get_active_document.return_value = model2
+        self.assertFalse(
+            set_dimension(sw2, "D1@S", 30.0, configuration="没有")["success"]
+        )
+
+
+class TestSetDimensionAngle(unittest.TestCase):
+    def test_degrees_converted_to_radians(self):
+        model = DimModel()
+        sw = Mock()
+        sw.get_active_document.return_value = model
+
+        result = set_dimension_angle(sw, "D1@旋转1", 90.0)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(len(model.dimension.set_calls), 1)
+        value, which, names = model.dimension.set_calls[0]
+        self.assertAlmostEqual(value, math.pi / 2, places=12)
+        self.assertEqual((which, names), (1, ""))
+        self.assertEqual(model.rebuild_count, 1)
+        self.assertEqual(result["data"]["value_deg"], 90.0)
+
+    def test_negative_and_invalid_degrees(self):
+        model = DimModel()
+        sw = Mock()
+        sw.get_active_document.return_value = model
+
+        ok = set_dimension_angle(sw, "D1@旋转1", -45.0)
+        self.assertTrue(ok["success"])
+        self.assertAlmostEqual(
+            model.dimension.set_calls[-1][0], -math.pi / 4, places=12
+        )
+
+        for bad in (float("nan"), float("inf")):
+            self.assertEqual(
+                set_dimension_angle(sw, "D1@旋转1", bad)["error"]["code"],
+                "INVALID_PARAMETER",
+            )
+        self.assertEqual(
+            set_dimension_angle(sw, "", 90.0)["error"]["code"],
+            "INVALID_PARAMETER",
+        )
 
     def test_handles_missing_dimension_and_com_errors(self):
         model = DimModel()

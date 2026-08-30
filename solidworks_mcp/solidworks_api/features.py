@@ -18,9 +18,10 @@ from solidworks_mcp.solidworks_api.geometry import (
     mm_to_m,
     walk_features,
 )
+from solidworks_mcp.solidworks_api.properties import activate_configuration
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
-from solidworks_mcp.utils.validation import positive_number
+from solidworks_mcp.utils.validation import finite_number, positive_number
 
 logger = logging.getLogger(__name__)
 
@@ -231,19 +232,34 @@ def set_dimension(
     sw_app: SolidWorksApp,
     dimension_full_name: str,
     value_mm: float,
+    configuration: Optional[str] = None,
 ) -> dict:
     """Set a length dimension (full name from get_feature_details) in mm and rebuild.
 
-    Angle dimensions are NOT supported: GetSystemValue3/SetSystemValue3 carry
-    angles in radians on this machine (see the T6 note), so callers must only
-    target length dimensions with this tool.
+    ``value_mm`` is signed since N12: offset/symmetric dimensions need
+    negative lengths (zero is still rejected). An optional ``configuration``
+    name is activated first — the names channel of SetSystemValue3 (which=3
+    with config names) returns success but never applies on this machine
+    (probe 2026-08-30), so per-configuration values ride the combo channel:
+    ShowConfiguration + which=1 on the active configuration.
+
+    Angle dimensions are NOT supported here: GetSystemValue3/SetSystemValue3
+    carry angles in radians on this machine (see the T6 note); use
+    ``set_dimension_angle`` for those.
     """
     try:
         if not dimension_full_name:
             return error_response(
                 "dimension_full_name must be non-empty", code="INVALID_PARAMETER"
             )
-        value_mm = positive_number("value_mm", value_mm)
+        value_mm = finite_number("value_mm", value_mm)
+        if value_mm == 0:
+            raise ValueError("value_mm must be non-zero")
+
+        if configuration:
+            activated = activate_configuration(sw_app, configuration)
+            if not activated.get("success"):
+                return activated
 
         model = sw_app.get_active_document()
         if model is None:
@@ -263,9 +279,16 @@ def set_dimension(
             )
         call_or_value(model, "EditRebuild3")  # zero-arg member: property
 
+        data: Dict[str, Any] = {"dimension": dimension_full_name, "value_mm": value_mm}
+        if configuration:
+            data["configuration"] = configuration
         return success_response(
-            data={"dimension": dimension_full_name, "value_mm": value_mm},
-            message=f"Set {dimension_full_name} = {value_mm}mm and rebuilt",
+            data=data,
+            message=(
+                f"Set {dimension_full_name} = {value_mm}mm"
+                + (f" in {configuration!r}" if configuration else "")
+                + " and rebuilt"
+            ),
         )
     except SolidWorksNotRunningError as exc:
         return error_response(str(exc))
@@ -274,6 +297,60 @@ def set_dimension(
     except Exception as exc:
         logger.exception("Failed to set dimension")
         return error_response(f"Failed to set dimension: {exc}")
+
+
+def set_dimension_angle(
+    sw_app: SolidWorksApp,
+    dimension_full_name: str,
+    value_deg: float,
+) -> dict:
+    """Set an angle dimension in degrees and rebuild (N12).
+
+    Angles travel in radians on the wire (T6 note); degrees are the
+    tool-facing unit, converted with ``math.radians``. Signed values are
+    valid (clockwise/counterclockwise); zero is allowed.
+    """
+    try:
+        if not dimension_full_name:
+            return error_response(
+                "dimension_full_name must be non-empty", code="INVALID_PARAMETER"
+            )
+        value_deg = finite_number("value_deg", value_deg)
+
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+
+        dim = model.Parameter(dimension_full_name)
+        if dim is None:
+            return error_response(f"Dimension not found: {dimension_full_name}")
+
+        value_rad = math.radians(value_deg)
+        result = dim.SetSystemValue3(value_rad, 1, "")  # swThisConfiguration
+        if isinstance(result, tuple):  # typed wrappers bundle byref out-params
+            result = result[0] if result else 0
+        if isinstance(result, int) and result < 0:
+            return error_response(
+                f"SolidWorks rejected the angle change (code {result})",
+                code="SW_API_ERROR",
+            )
+        call_or_value(model, "EditRebuild3")  # zero-arg member: property
+
+        return success_response(
+            data={
+                "dimension": dimension_full_name,
+                "value_deg": value_deg,
+                "value_rad": value_rad,
+            },
+            message=f"Set {dimension_full_name} = {value_deg}deg and rebuilt",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to set angle dimension")
+        return error_response(f"Failed to set angle dimension: {exc}")
 
 
 def delete_feature(sw_app: SolidWorksApp, feature_name: str) -> dict:

@@ -143,6 +143,37 @@ def main() -> int:
     e2e.step("props.add_equation", props.add_equation, sw, '"e2e_x" = 50')
     e2e.step("props.list_equations", props.list_equations, sw)
     e2e.step("props.add_configuration", props.add_configuration, sw, "E2E_CFG")
+
+    # --- N12 参数化闭环：方程式增删改 + 配置激活系列件最小链 ---
+    e2e.step("props.edit_equation", props.edit_equation, sw, 0, '"e2e_x" = 99')
+    e2e.step("props.activate_configuration", props.activate_configuration, sw, "E2E_CFG")
+    if dims:
+        fam_name = dims[0]["full_name"]
+        e2e.step("features.set_dimension_cfg", features.set_dimension, sw, fam_name, 30.0, "E2E_CFG")
+
+        def _read_dim(sw_app, full_name):
+            model = sw_app.get_active_document()
+            raw = model.Parameter(full_name).GetSystemValue3(1, "")
+            from solidworks_mcp.solidworks_api.features import _system_value_m
+            value_m = _system_value_m(raw)
+            return {"success": value_m is not None,
+                    "data": {"value_mm": round(value_m * 1000.0, 6) if value_m is not None else None}}
+
+        e2e.step("props.activate_default", props.activate_configuration, sw, "默认")
+        base = e2e.step("n12.read_default", _read_dim, sw, fam_name)
+        e2e.step("props.activate_family", props.activate_configuration, sw, "E2E_CFG")
+        fam = e2e.step("n12.read_family", _read_dim, sw, fam_name)
+        base_mm = ((base.get("data") or {}).get("value_mm"))
+        fam_mm = ((fam.get("data") or {}).get("value_mm"))
+        isolated = base_mm is not None and fam_mm is not None and base_mm != fam_mm
+        e2e.steps.append({"name": "n12.expect_config_isolated", "success": isolated,
+                          "error": None if isolated else {"code": "CONFIG_NOT_ISOLATED",
+                                                          "details": f"default={base_mm} family={fam_mm}"}})
+    else:
+        e2e.steps.append({"name": "n12.family_chain", "success": False,
+                          "error": {"code": "NO_DIMS", "details": None}})
+    e2e.step("props.delete_equation", props.delete_equation, sw, 0)
+
     e2e.step("file_io.export_step", file_io.export_step, sw, str(WORK_DIR / "e2e_box.step"), True)
     e2e.step("file_io.export_stl", file_io.export_stl, sw, str(WORK_DIR / "e2e_box.stl"), True)
     e2e.step("file_io.close_document", file_io.close_document, sw, True)
