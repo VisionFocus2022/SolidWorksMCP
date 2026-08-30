@@ -128,15 +128,34 @@ class TestServerToolWrappers(unittest.TestCase):
                 {"mate_type": "coincident", "entity1": "A", "entity2": "B"},
             ),
         ]
-        with patch.object(
-            server, "_call_connected", return_value=dict(self.SENTINEL)
-        ):
+        # N14: tools live in per-domain registry modules now, so the shared
+        # _call_connected stub must be patched in every domain's namespace.
+        from contextlib import ExitStack
+
+        from solidworks_mcp.registry import (
+            assembly,
+            features,
+            file_io,
+            misc,
+            part,
+            products,
+        )
+
+        with ExitStack() as stack:
+            for domain in (misc, part, features, file_io, assembly, products):
+                stack.enter_context(
+                    patch.object(
+                        domain, "_call_connected", return_value=dict(self.SENTINEL)
+                    )
+                )
             for fn, kwargs in calls:
                 with self.subTest(tool=fn.__name__):
                     self.assertEqual(fn(**kwargs), self.SENTINEL)
 
     def test_connect_maps_executor_failure_to_structured_error(self):
-        with patch.object(server, "run_com", side_effect=RuntimeError("boom")):
+        from solidworks_mcp.registry import base
+
+        with patch.object(base, "run_com", side_effect=RuntimeError("boom")):
             result = server.solidworks_connect(launch_if_needed=False)
         self.assertFalse(result["success"])
         self.assertEqual(result["error"]["code"], "SW_API_ERROR")
@@ -145,7 +164,7 @@ class TestServerToolWrappers(unittest.TestCase):
         result = server.solidworks_design_capabilities()
 
         self.assertTrue(result["success"])
-        self.assertEqual(len(result["data"]["tools"]), 71)
+        self.assertEqual(len(result["data"]["tools"]), 69)
 
     def test_resources_return_json_payloads(self):
         status = json.loads(server.solidworks_status_resource())
@@ -158,7 +177,7 @@ class TestServerToolWrappers(unittest.TestCase):
         self.assertTrue(active["success"])
 
         capabilities = json.loads(server.solidworks_capabilities_resource())
-        self.assertEqual(len(capabilities["tools"]), 71)
+        self.assertEqual(len(capabilities["tools"]), 69)
 
 
 class TestComTimeout(unittest.TestCase):
@@ -196,8 +215,10 @@ class TestComTimeout(unittest.TestCase):
     def test_connect_maps_timeout_to_dedicated_error_code(self):
         from solidworks_mcp.utils.com_executor import ComCallTimeoutError
 
+        from solidworks_mcp.registry import base
+
         with patch.object(
-            server, "run_com", side_effect=ComCallTimeoutError("too slow")
+            base, "run_com", side_effect=ComCallTimeoutError("too slow")
         ):
             result = server.solidworks_connect(launch_if_needed=False)
         self.assertFalse(result["success"])

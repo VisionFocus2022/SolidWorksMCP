@@ -26,23 +26,22 @@ class Model:
 
 
 class TestMeasureDistance(unittest.TestCase):
+    """N14: measure_distance is pure computation — no SolidWorks involved."""
+
     def test_distance_between_two_points(self):
-        sw = Mock()
-        sw.get_active_document.return_value = object()
-        result = measure_distance(sw, [0, 0, 0], [30, 40, 0])
+        result = measure_distance([0, 0, 0], [30, 40, 0])
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["distance_mm"], 50.0)
         self.assertEqual(result["data"]["delta_mm"], [30.0, 40.0, 0.0])
 
     def test_rejects_malformed_points(self):
-        sw = Mock()
-        bad = measure_distance(sw, [0, 0], [1, 2, 3])
+        bad = measure_distance([0, 0], [1, 2, 3])
         self.assertEqual(bad["error"]["code"], "INVALID_PARAMETER")
 
-    def test_requires_active_document(self):
-        sw = Mock()
-        sw.get_active_document.return_value = None
-        self.assertFalse(measure_distance(sw, [0, 0, 0], [1, 1, 1])["success"])
+    def test_works_without_any_solidworks_connection(self):
+        result = measure_distance([0, 0, 0], [1, 1, 1])
+        self.assertTrue(result["success"])
+        self.assertAlmostEqual(result["data"]["distance_mm"], 3.0 ** 0.5, places=5)
 
 
 class TestBoundingBox(unittest.TestCase):
@@ -70,7 +69,6 @@ class TestBoundingBox(unittest.TestCase):
     def test_com_error_is_tool_error(self):
         sw = Mock()
         sw.get_active_document.side_effect = RuntimeError("COM failed")
-        self.assertFalse(measure_distance(sw, [0, 0, 0], [1, 1, 1])["success"])
         self.assertFalse(get_bounding_box(sw)["success"])
 
 

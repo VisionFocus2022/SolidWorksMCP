@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from solidworks_mcp import server
 from solidworks_mcp.config import get_config
+from solidworks_mcp.registry import base
 from solidworks_mcp.utils.com_executor import ComExecutorPoisonedError
 
 
@@ -40,7 +41,7 @@ class TestPoisonedRecovery(unittest.TestCase):
 
     def test_poisoned_call_returns_structured_result_with_recovery(self):
         with patch.object(
-            server, "run_com", side_effect=ComExecutorPoisonedError("stuck")
+            base, "run_com", side_effect=ComExecutorPoisonedError("stuck")
         ):
             result = server._call_connected(lambda sw: {})
         self.assertFalse(result["success"])
@@ -50,7 +51,7 @@ class TestPoisonedRecovery(unittest.TestCase):
 
     def test_poisoned_connect_tool_returns_same_structured_result(self):
         with patch.object(
-            server, "run_com", side_effect=ComExecutorPoisonedError("stuck")
+            base, "run_com", side_effect=ComExecutorPoisonedError("stuck")
         ):
             result = server.solidworks_connect(launch_if_needed=False)
         self.assertFalse(result["success"])
@@ -60,7 +61,7 @@ class TestPoisonedRecovery(unittest.TestCase):
     def test_poisoned_exit_switch_terminates_process(self):
         with patch.dict(os.environ, {"SOLIDWORKS_MCP_POISONED_EXIT": "1"}):
             with patch.object(
-                server, "run_com", side_effect=ComExecutorPoisonedError("stuck")
+                base, "run_com", side_effect=ComExecutorPoisonedError("stuck")
             ):
                 with self.assertRaises(SystemExit):
                     server._call_connected(lambda sw: {})

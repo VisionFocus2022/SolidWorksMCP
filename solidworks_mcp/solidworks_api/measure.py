@@ -15,19 +15,20 @@ SW_SOLID_BODY = 0  # swBodyType_e.swSolidBody
 
 
 def measure_distance(
-    sw_app: SolidWorksApp,
     point1: Sequence[float],
     point2: Sequence[float],
 ) -> dict:
-    """Euclidean distance between two model-space [x, y, z] points in mm."""
+    """Euclidean distance between two model-space [x, y, z] points in mm.
+
+    Pure computation (N14): no SolidWorks connection, no active document
+    — works with nothing running.
+    """
     try:
         for label, point in (("point1", point1), ("point2", point2)):
             if not isinstance(point, (list, tuple)) or len(point) != 3:
                 return error_response(
                     f"{label} must be [x, y, z] in mm", code="INVALID_PARAMETER"
                 )
-        if sw_app.get_active_document() is None:
-            return error_response("No active document")
         deltas = [float(b) - float(a) for a, b in zip(point1, point2)]
         distance = math.sqrt(sum(d * d for d in deltas))
         return success_response(
@@ -39,8 +40,6 @@ def measure_distance(
             },
             message=f"Distance = {distance:.4f} mm",
         )
-    except SolidWorksNotRunningError as exc:
-        return error_response(str(exc))
     except Exception as exc:
         logger.exception("Failed to measure distance")
         return error_response(f"Failed to measure distance: {exc}")

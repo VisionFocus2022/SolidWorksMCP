@@ -122,7 +122,7 @@ def main() -> int:
     if cut:
         e2e.step("features.delete_feature", features.delete_feature, sw, cut)
     e2e.step("measure.get_bounding_box", measure.get_bounding_box, sw)
-    e2e.step("measure.measure_distance", measure.measure_distance, sw, [0.0, 0.0, 0.0], [60.0, 40.0, 0.0])
+    e2e.step("measure.measure_distance", measure.measure_distance, [0.0, 0.0, 0.0], [60.0, 40.0, 0.0])
     e2e.step("topology.list_bodies", topology.list_bodies, sw)
     box_listing = e2e.step("topology.list_faces", topology.list_faces, sw)
     # 盒顶/底两面（2400mm²）互不相邻：圆角其一、倒角另一，几何确定性成立

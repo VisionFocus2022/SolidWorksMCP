@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,7 +20,6 @@ from solidworks_mcp.examples.ring_light import (
     create_ring_light,
     write_ring_light_stl,
 )
-from solidworks_mcp.server import mcp
 
 
 class TestRingLightLayout(unittest.TestCase):
@@ -120,13 +122,35 @@ class TestRingLightCreate(unittest.TestCase):
 
 
 class TestRingLightServerRegistration(unittest.TestCase):
-    def test_ring_light_tool_is_registered(self):
-        tools = {tool.name for tool in mcp._tool_manager.list_tools()}
+    """N14: the tool registers only when SOLIDWORKS_MCP_PRODUCT_TOOLS lists it."""
 
-        self.assertIn("solidworks_part_create_ring_light", tools)
-        tool = mcp._tool_manager.get_tool("solidworks_part_create_ring_light")
-        self.assertEqual(tool.parameters["properties"]["outer_diameter"]["exclusiveMinimum"], 0)
-        self.assertIsNotNone(tool.output_schema)
+    def test_ring_light_tool_registers_under_env_gate(self):
+        code = (
+            "import json; from solidworks_mcp.server import mcp; "
+            "t = mcp._tool_manager.get_tool('solidworks_part_create_ring_light'); "
+            "print(json.dumps({"
+            "'found': t is not None, "
+            "'outer_min_exclusive':"
+            " t.parameters['properties']['outer_diameter'].get('exclusiveMinimum'), "
+            "'has_output_schema': t.output_schema is not None"
+            "}))"
+        )
+        env = {
+            **os.environ,
+            "SOLIDWORKS_MCP_PRODUCT_TOOLS": "ring_light",
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+        }
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        info = json.loads(proc.stdout.strip().splitlines()[-1])
+        self.assertTrue(info["found"])
+        self.assertEqual(info["outer_min_exclusive"], 0)
+        self.assertTrue(info["has_output_schema"])
 
     def test_default_row_counts_are_21_to_29(self):
         self.assertEqual(DEFAULT_ROW_COUNTS, tuple(range(21, 30)))

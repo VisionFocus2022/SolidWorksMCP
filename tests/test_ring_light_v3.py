@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -16,7 +18,6 @@ from solidworks_mcp.examples.ring_light_v3 import (
     _band_crosses_mount_zone,
     create_ring_light_v3,
 )
-from solidworks_mcp.server import mcp
 
 
 class TestRingLightV3Layout(unittest.TestCase):
@@ -113,9 +114,26 @@ class TestRingLightV3Layout(unittest.TestCase):
 
 
 class TestRingLightV3ServerRegistration(unittest.TestCase):
-    def test_v3_tool_is_registered(self):
-        tools = {tool.name for tool in mcp._tool_manager.list_tools()}
-        self.assertIn("solidworks_part_create_ring_light_v3", tools)
+    """N14: the tool registers only when SOLIDWORKS_MCP_PRODUCT_TOOLS lists it."""
+
+    def test_v3_tool_registers_under_env_gate(self):
+        code = (
+            "from solidworks_mcp.server import mcp; "
+            "assert mcp._tool_manager.get_tool("
+            "'solidworks_part_create_ring_light_v3') is not None"
+        )
+        env = {
+            **os.environ,
+            "SOLIDWORKS_MCP_PRODUCT_TOOLS": "ring_light",
+            "PYTHONPATH": os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        }
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
 class _V3Sketch:

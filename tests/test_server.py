@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
+import sys
 import threading
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from solidworks_mcp import __version__
@@ -19,7 +23,7 @@ class TestServerRegistration(unittest.TestCase):
         tools = mcp._tool_manager.list_tools()
         resources = mcp._resource_manager.list_resources()
         prompts = mcp._prompt_manager.list_prompts()
-        self.assertEqual(len(tools), 71)
+        self.assertEqual(len(tools), 69)
         self.assertEqual(len(resources), 3)
         self.assertEqual(len(prompts), 5)
 
@@ -85,10 +89,13 @@ class TestServerRegistration(unittest.TestCase):
 
     def test_n5_drawing_tools_forward_to_connected_call(self):
         from solidworks_mcp import server
+        from solidworks_mcp.registry import drawing, file_io
 
         with patch.object(
-            server, "_call_connected", return_value={"success": True}
-        ) as call:
+            drawing, "_call_connected", return_value={"success": True}
+        ) as draw_call, patch.object(
+            file_io, "_call_connected", return_value={"success": True}
+        ) as file_call:
             self.assertTrue(
                 server.solidworks_drawing_set_tolerance("D1@f", 0.1, -0.05)["success"]
             )
@@ -101,7 +108,49 @@ class TestServerRegistration(unittest.TestCase):
                 server.solidworks_drawing_insert_note("x", 10.0, 10.0)["success"]
             )
             self.assertTrue(server.solidworks_file_export_dxf("d.dxf")["success"])
-        self.assertEqual(call.call_count, 4)
+        self.assertEqual(draw_call.call_count, 3)
+        self.assertEqual(file_call.call_count, 1)
+
+
+class TestProductToolGate(unittest.TestCase):
+    """N14: ring-light product tools register only under their env gate."""
+
+    def _registered_tools_in_subprocess(self, extra_env):
+        code = (
+            "import json; from solidworks_mcp.server import mcp; "
+            "print(json.dumps([t.name for t in mcp._tool_manager.list_tools()]))"
+        )
+        env = {
+            **os.environ,
+            **extra_env,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+        }
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+
+    def test_product_tools_are_hidden_by_default(self):
+        tools = {tool.name for tool in mcp._tool_manager.list_tools()}
+        self.assertNotIn("solidworks_part_create_ring_light", tools)
+        self.assertNotIn("solidworks_part_create_ring_light_v3", tools)
+
+    def test_default_subprocess_registers_69_tools(self):
+        tools = self._registered_tools_in_subprocess({})
+        self.assertEqual(len(tools), 69)
+        self.assertNotIn("solidworks_part_create_ring_light", tools)
+
+    def test_product_tools_register_under_env_gate(self):
+        tools = self._registered_tools_in_subprocess(
+            {"SOLIDWORKS_MCP_PRODUCT_TOOLS": "ring_light"}
+        )
+        self.assertEqual(len(tools), 71)
+        self.assertIn("solidworks_part_create_ring_light", tools)
+        self.assertIn("solidworks_part_create_ring_light_v3", tools)
 
 
 class TestSolidWorksConnection(unittest.TestCase):
@@ -117,7 +166,7 @@ class TestSolidWorksConnection(unittest.TestCase):
         self.assertEqual(result["data"]["version"], "34.2.1")
         self.assertEqual(result["message"], "Already connected to SolidWorks")
 
-    @patch("solidworks_mcp.server.run_com", side_effect=RuntimeError("worker failed"))
+    @patch("solidworks_mcp.registry.base.run_com", side_effect=RuntimeError("worker failed"))
     def test_connect_returns_structured_error_when_com_executor_fails(self, _run_com):
         from solidworks_mcp.server import solidworks_connect
 
