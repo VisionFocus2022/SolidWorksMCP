@@ -33,6 +33,11 @@
 
 - 断言点（SW 侧链路）：`output/` 下同基名 `.sldprt`、`.step`、`.svg` 三文件
   存在且非空（SLDPRT/STEP 由 SW COM 保存导出，SVG 为 HLR 工程图）。
+- 已实测（2026-08-30）：`tools/validate/triple_artifact.py` 退出码 0 —— 同一
+  环件脚本双引擎产出 `ring.svg`（HLR 三视图 edge_count=32）+ `ring.sldprt`
+  （rebuild_csg_plan 2 特征保存）+ `ring.step`（COM 导出）同目录落盘，报告
+  `output/triple-artifact-20260830-192223/report.json`；体积自洽另见
+  `tools/validate/csg_roundtrip.py`（rel_diff 2.9e-16，±1% 门限）。
 
 ## 6. 体积窗口（几何自洽）
 
