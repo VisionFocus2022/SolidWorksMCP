@@ -20,9 +20,12 @@ from solidworks_mcp.solidworks_api.assembly import (
     add_component,
     add_mate,
     check_interference,
+    delete_mate,
     get_bom,
     get_components,
+    move_component,
     new_assembly,
+    rotate_component,
 )
 from solidworks_mcp.solidworks_api.design import (
     DESIGN_PLAN_OPERATIONS,
@@ -107,6 +110,10 @@ PositiveMM = Annotated[
 FiniteMM = Annotated[
     float,
     Field(allow_inf_nan=False, description="Finite coordinate in millimeters"),
+]
+FiniteAngle = Annotated[
+    float,
+    Field(allow_inf_nan=False, description="Finite angle in degrees"),
 ]
 NonNegativeMM = Annotated[
     float,
@@ -395,7 +402,12 @@ def solidworks_assembly_prompt(requirements: str) -> str:
         "(e.g. \"Face2@box-1\" and \"Face0@cyl-1\") — entity names must carry the "
         "component instance and are matched as \"<name>@<assembly title>\" first. "
         "Verify with solidworks_assembly_check_interference (empty means no "
-        "collisions) and solidworks_assembly_get_bom for the part list. "
+        "collisions; each hit carries volume_mm3 plus center_mm/bbox_mm for "
+        "locating the overlap) and solidworks_assembly_get_bom for the part "
+        "list (per-part volume_mm3/mass_g/material). Repair loop: "
+        "solidworks_assembly_move_component / _rotate_component transform "
+        "the offending component, then re-check interference; "
+        "solidworks_assembly_delete_mate removes one mate by exact name. "
         "All lengths are millimetres.\n\n"
         f"Assembly requirements:\n{requirements}"
     )
@@ -1284,6 +1296,47 @@ def solidworks_assembly_add_mate(
             entity1_type,
             entity2_type,
         ),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Delete assembly mate", annotations=DESTRUCTIVE, structured_output=True)
+def solidworks_assembly_delete_mate(
+    mate_name: NonEmptyString,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Delete one exactly matched mate from the active assembly (destructive; success is judged by the mate leaving the tree, so verify with list_features afterwards if critical)."""
+    return _call_connected(
+        lambda sw: delete_mate(sw, mate_name),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Move component", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_assembly_move_component(
+    component_name: NonEmptyString,
+    dx: FiniteMM,
+    dy: FiniteMM,
+    dz: FiniteMM,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Translate one component by (dx, dy, dz) millimetres, composed onto its current transform; the assembly is rebuilt so an immediate check_interference reflects the new position."""
+    return _call_connected(
+        lambda sw: move_component(sw, component_name, dx, dy, dz),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Rotate component", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_assembly_rotate_component(
+    component_name: NonEmptyString,
+    axis: Literal["x", "y", "z"],
+    angle_deg: FiniteAngle,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Rotate one component by angle_deg degrees about an assembly axis (x/y/z) through the origin; follow up with check_interference to verify the new pose."""
+    return _call_connected(
+        lambda sw: rotate_component(sw, component_name, axis, angle_deg),
         launch_if_needed,
     )
 

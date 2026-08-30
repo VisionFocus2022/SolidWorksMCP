@@ -22,6 +22,8 @@
 | 脚本 | 验证对象 | 有效结论 | 任务 |
 |---|---|---|---|
 | probe_assembly_extras.py | 新建装配/干涉/BOM/mate 常量 | AddComponent4 要求零件预开；InterferenceDetectionManager 干涉/体积；AddMate5 角度走 Angle 槽；tangent=4/angle=6/width=17 | T11 |
+| probe_interference_transform.py | 干涉空间/组件变换/mate 删除 | GetInterferenceBody→GetBodyBox()+GetMassProperties(1000)[0:3]；TransformComponent2 已移除→CreateTransform(16 元素 VARIANT)→SetTransformAndSolve3(替换式)+EditRebuild3 才刷新；mate 删除=SelectByID2(name,"MATE")+EditDelete（复检须含 MateGroup 一层子特征）；装配面选择唯一可靠=IEntity(face).Select2；typed 包装 gencache.GetModuleForProgID | N8 |
+| probe_tangent_width.py | tangent mate 复验 + delete_mate 闭环 | 面遍历 GetNextFace 仅 typed 可达；面积最大面启发（box 顶面 2400/cyl 侧面 2513 mm²）；AddMate5(4)→「相切1」实机成功；生产 delete_mate 删除复检通过；width 需 4 面 fixture→N15 | N8 |
 
 ## probe_drawing/ — 工程图域
 

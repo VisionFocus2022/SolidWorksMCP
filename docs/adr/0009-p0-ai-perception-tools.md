@@ -42,5 +42,8 @@ T9（尺寸读写）与 T7（装饰特征）建立在其上。
   共用一套实体引用）；get_feature_details → dimension_set（参数化闭环）。
 - 中文 SW 的本地化名（凸台-拉伸1）由「树末特征+显式 rename」规避，
   工具返回统一 ASCII 名。
-- 遗留：装配中 face 按名选择仍不可用（quirk #12），tangent/width mate
-  待 walk+Select2 扩展到装配上下文后复验（T11 记录）。
+- 遗留更新（N8，2026-08-30）：装配中 face 按名选择仍不可用（quirk #12）；
+  但 IEntity 包装路径（`comp.GetBody() → GetFirstFace → IEntity.Select2`）
+  在装配上下文可靠。tangent mate 经此路径实机验证通过（AddMate5(4) →
+  「相切1」，probe_tangent_width.py）；width mate 需 4 面选择的槽/薄片
+  fixture，联动 N15。

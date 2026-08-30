@@ -6,11 +6,15 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from solidworks_mcp.solidworks_api.app import SolidWorksNotRunningError
 from solidworks_mcp.solidworks_api.assembly import (
     _get_or_create_assembly,
     add_component,
     add_mate,
+    delete_mate,
     get_components,
+    move_component,
+    rotate_component,
 )
 
 
@@ -144,19 +148,25 @@ from solidworks_mcp.solidworks_api.constants import (  # noqa: E402
 
 
 class FakeExtension:
-    def __init__(self, accepted_suffix):
+    def __init__(self, accepted_suffix, mates=None):
         self.calls = []
         self.accepted_suffix = accepted_suffix
+        # 共享 list 引用：EditDelete 移除即同步（实机语义）
+        self.mates = mates if mates is not None else []
+        self.reject_mates = False
 
     def SelectByID2(self, name, type_, x, y, z, append, mark, callout, option):
         self.calls.append((name, type_, append))
+        if type_ == "MATE":
+            return not self.reject_mates and name in self.mates
         return name.endswith(self.accepted_suffix)
 
 
 class FakeInterference:
-    def __init__(self, volume_m3, comp_names):
+    def __init__(self, volume_m3, comp_names, body=None):
         self._volume_m3 = volume_m3
         self._comp_names = comp_names
+        self._body = body
 
     @property
     def Volume(self):
@@ -165,6 +175,31 @@ class FakeInterference:
     @property
     def Components(self):
         return [SimpleNamespace(Name2=n) for n in self._comp_names]
+
+    def GetInterferenceBody(self):
+        return self._body
+
+
+class FakeInterferenceBody:
+    """探针真值形态：干涉体包围盒（米）与质量属性 12 值。"""
+
+    def GetBodyBox(self):
+        return [-0.02, -0.02, -0.01, 0.03, 0.02, 0.01]
+
+    def GetMassProperties(self, _density):
+        return [0.005, 0.0, 0.0, 4e-05, 8.8e-3, 0.04,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+
+class FakeBomBody:
+    """GetMassProperties(density)：[3]=体积 m³，[5]=体积×density（kg）。"""
+
+    def __init__(self, volume_m3):
+        self._volume_m3 = volume_m3
+
+    def GetMassProperties(self, density):
+        return [0.005, 0.0, 0.0, self._volume_m3, 8.8e-3,
+                self._volume_m3 * density, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
 
 class FakeInterferenceMgr:
@@ -177,15 +212,49 @@ class FakeInterferenceMgr:
         return self._inters
 
 
+class FakeFeature:
+    """树特征：顶层 walk + 一层子特征（mate 藏在 MateGroup 里，N8 探针）。"""
+
+    def __init__(self, name, type_name, subs=None, next_feat=None):
+        self._name = name
+        self._type = type_name
+        self._subs = subs or []
+        self._next = next_feat
+        self._sub_pos = -1
+
+    @property
+    def Name(self):
+        return self._name
+
+    @property
+    def GetTypeName2(self):
+        return self._type
+
+    def GetFirstSubFeature(self):
+        self._sub_pos = 0
+        return self._subs[0] if self._subs else None
+
+    def GetNextSubFeature(self):
+        self._sub_pos += 1
+        if self._sub_pos < len(self._subs):
+            return self._subs[self._sub_pos]
+        return None
+
+    def GetNextFeature(self):
+        return self._next
+
+
 class FakeAsmDoc:
     """实机形态：零参成员是属性；GetTitle='装配体1'；干涉经 Mgr。"""
 
-    def __init__(self, comps=None, interferences=None):
+    def __init__(self, comps=None, interferences=None, mates=None):
         self.comps = comps or []
         self.mgr = FakeInterferenceMgr(interferences or [])
-        self.ext = FakeExtension("@装配体1")
+        self.mates = list(mates or [])
+        self.ext = FakeExtension("@装配体1", mates=self.mates)
         self.add_mate_calls = []
         self.save_calls = []
+        self.rebuild_count = 0
 
     @property
     def GetType(self):
@@ -216,6 +285,22 @@ class FakeAsmDoc:
     def SaveAs3(self, path, version, options):
         self.save_calls.append(path)
         return 0
+
+    @property
+    def FirstFeature(self):
+        subs = [FakeFeature(name, "MateCoincident") for name in self.mates]
+        return FakeFeature("配合", "MateGroup", subs=subs)
+
+    def EditDelete(self):
+        for name, type_, _append in reversed(self.ext.calls):
+            if type_ == "MATE" and name in self.mates:
+                self.mates.remove(name)
+                return True
+        return False
+
+    def EditRebuild3(self):
+        self.rebuild_count += 1
+        return True
 
 
 def _asm_sw(doc):
@@ -454,6 +539,381 @@ class TestT11ErrorBranches(unittest.TestCase):
         self.assertFalse(
             add_mate(sw, "coincident", "A", "B")["success"]
         )
+
+
+# --- N8：干涉空间定位 / delete_mate / 组件变换 / BOM 扩列 ---
+
+IDENTITY_XFORM = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
+
+
+def _movable_comp(name="box-1"):
+    return SimpleNamespace(
+        Name2=name,
+        GetTotalTransform=Mock(
+            return_value=SimpleNamespace(ArrayData=list(IDENTITY_XFORM))
+        ),
+        SetTransformAndSolve3=Mock(return_value=True),
+    )
+
+
+def _math_sw(doc, comp):
+    sw = _asm_sw(doc)
+    if comp is not None:
+        doc.comps = [comp]
+    mu = Mock()
+    mu.CreateTransform.return_value = object()
+    sw.app.GetMathUtility.return_value = mu
+    return sw, mu
+
+
+class TestInterferenceSpatial(unittest.TestCase):
+    def test_row_carries_center_and_bbox_mm(self):
+        # 探针真值：60×40×20 盒重叠干涉体的 GetBodyBox/GetMassProperties 形态
+        doc = FakeAsmDoc(interferences=[
+            FakeInterference(4e-05, ["box-1", "box-2"], body=FakeInterferenceBody()),
+        ])
+        row = check_interference(_asm_sw(doc))["data"]["interferences"][0]
+        self.assertEqual(row["center_mm"], [5.0, 0.0, 0.0])
+        self.assertEqual(row["bbox_mm"], [-20.0, -20.0, -10.0, 30.0, 20.0, 10.0])
+
+    def test_row_without_body_reports_nulls(self):
+        doc = FakeAsmDoc(interferences=[FakeInterference(4e-05, ["a-1", "a-2"])])
+        row = check_interference(_asm_sw(doc))["data"]["interferences"][0]
+        self.assertIsNone(row["center_mm"])
+        self.assertIsNone(row["bbox_mm"])
+
+
+class TestDeleteMate(unittest.TestCase):
+    def test_deletes_mate_selected_as_mate_type(self):
+        # 实机：SelectByID2(name, "MATE") 唯一可用类型；复检树复必含 MateGroup 子树
+        doc = FakeAsmDoc(mates=["重合1"])
+        result = delete_mate(_asm_sw(doc), "重合1")
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["data"]["deleted"], "重合1")
+        self.assertEqual(doc.ext.calls[-1][1], "MATE")
+        self.assertEqual(doc.mates, [])
+
+    def test_mate_not_found_is_structured(self):
+        result = delete_mate(_asm_sw(FakeAsmDoc(mates=["距离1"])), "重合1")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "MATE_NOT_FOUND")
+
+    def test_selection_refusal_is_sw_error(self):
+        doc = FakeAsmDoc(mates=["重合1"])
+        doc.ext.reject_mates = True
+        result = delete_mate(_asm_sw(doc), "重合1")
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+
+    def test_delete_rejected_by_tree_recheck(self):
+        doc = FakeAsmDoc(mates=["重合1"])
+        doc.EditDelete = lambda: False  # SW 拒删：mate 仍在树
+        result = delete_mate(_asm_sw(doc), "重合1")
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+
+    def test_requires_assembly_document(self):
+        sw = Mock()
+        sw.get_active_document.return_value = None
+        self.assertFalse(delete_mate(sw, "重合1")["success"])
+
+
+class TestComponentTransform(unittest.TestCase):
+    @patch("solidworks_mcp.solidworks_api.assembly.win32com.client.VARIANT",
+           side_effect=lambda vt, data: data)
+    def test_move_translates_and_rebuilds(self, _variant):
+        # 探针：16 元素 VARIANT（13 元素不生效）；SetTransformAndSolve3 替换式
+        # → 先读当前 GetTotalTransform，平移叠加；EditRebuild3 后干涉才更新
+        comp = _movable_comp()
+        sw, mu = _math_sw(FakeAsmDoc(), comp)
+        result = move_component(sw, "box-1", 10, 20, 30)
+        self.assertTrue(result["success"], result)
+        data = mu.CreateTransform.call_args[0][0]
+        self.assertEqual(len(data), 16)
+        self.assertEqual(data[9:12], [0.01, 0.02, 0.03])  # mm→m 叠加在当前平移
+        self.assertEqual(data[0:9], [1, 0, 0, 0, 1, 0, 0, 0, 1])
+        comp.SetTransformAndSolve3.assert_called_once_with(
+            mu.CreateTransform.return_value, True)
+        self.assertEqual(sw.get_active_document().rebuild_count, 1)
+
+    @patch("solidworks_mcp.solidworks_api.assembly.win32com.client.VARIANT",
+           side_effect=lambda vt, data: data)
+    def test_rotate_about_world_z(self, _variant):
+        comp = _movable_comp()
+        sw, mu = _math_sw(FakeAsmDoc(), comp)
+        result = rotate_component(sw, "box-1", "z", 90.0)
+        self.assertTrue(result["success"], result)
+        data = mu.CreateTransform.call_args[0][0]
+        self.assertEqual([round(v, 9) for v in data[0:9]],
+                         [0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0])
+        self.assertEqual(data[9:12], [0, 0, 0])  # 原点位置保持
+
+    def test_unknown_component_and_bad_params(self):
+        sw, _mu = _math_sw(FakeAsmDoc(), None)
+        self.assertEqual(move_component(sw, "ghost", 1, 1, 1)["error"]["code"],
+                         "COMPONENT_NOT_FOUND")
+        comp = _movable_comp()
+        sw2, _mu2 = _math_sw(FakeAsmDoc(), comp)
+        self.assertEqual(rotate_component(sw2, "box-1", "w", 90)["error"]["code"],
+                         "INVALID_PARAMETER")
+        self.assertEqual(
+            rotate_component(sw2, "box-1", "z", float("nan"))["error"]["code"],
+            "INVALID_PARAMETER")
+        self.assertEqual(
+            move_component(sw2, "box-1", float("nan"), 0, 0)["error"]["code"],
+            "INVALID_PARAMETER")
+
+    @patch("solidworks_mcp.solidworks_api.assembly.win32com.client.VARIANT",
+           side_effect=lambda vt, data: data)
+    def test_transform_refusal_is_sw_error(self, _variant):
+        comp = _movable_comp()
+        comp.SetTransformAndSolve3.return_value = False
+        sw, _mu = _math_sw(FakeAsmDoc(), comp)
+        result = move_component(sw, "box-1", 5, 0, 0)
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+
+
+class TestBomExtended(unittest.TestCase):
+    def test_rows_carry_volume_mass_material(self):
+        # 探针：comp.GetBody→GetMassProperties(1000)：[3] 体积、[5] 质量；
+        # GetMaterialIdName 材料名（空串=未设→None）
+        body = FakeBomBody(4e-05)
+        doc = FakeAsmDoc(comps=[
+            SimpleNamespace(Name2="box-1",
+                            GetPathName=lambda: "e:/a/box.SLDPRT",
+                            ReferencedConfiguration=lambda: "默认",
+                            GetBody=lambda: body,
+                            GetMaterialIdName=lambda: "普通碳钢"),
+        ])
+        item = get_bom(_asm_sw(doc))["data"]["items"][0]
+        self.assertEqual(item["volume_mm3"], 40000.0)
+        self.assertEqual(item["mass_g"], 40.0)
+        self.assertEqual(item["material"], "普通碳钢")
+
+    def test_rows_without_body_or_material_stay_structured(self):
+        doc = FakeAsmDoc(comps=[
+            SimpleNamespace(Name2="box-1",
+                            GetPathName=lambda: "e:/a/box.SLDPRT",
+                            ReferencedConfiguration=lambda: "默认"),
+        ])
+        item = get_bom(_asm_sw(doc))["data"]["items"][0]
+        self.assertIsNone(item["volume_mm3"])
+        self.assertIsNone(item["mass_g"])
+        self.assertIsNone(item["material"])
+
+
+class TestN8ErrorBranches(unittest.TestCase):
+    """N8 四组扩展的容错分支：形态不合法/成员抛异常时结构化降级不炸报告。"""
+
+    # --- _interference_spatial：bbox/center 各自独立降级 ---
+
+    def test_spatial_short_box_still_yields_center(self):
+        class HalfBody:
+            def GetBodyBox(self):
+                return [0.1, 0.2]  # <6 值 → bbox 拒收
+
+            def GetMassProperties(self, _d):
+                return [0.001, 0.0, 0.0, 1e-05]
+
+        doc = FakeAsmDoc(interferences=[
+            FakeInterference(4e-05, ["a-1", "a-2"], body=HalfBody()),
+        ])
+        row = check_interference(_asm_sw(doc))["data"]["interferences"][0]
+        self.assertIsNone(row["bbox_mm"])
+        self.assertEqual(row["center_mm"], [1.0, 0.0, 0.0])
+
+    def test_spatial_non_numeric_box_is_rejected(self):
+        class OddBoxBody:
+            def GetBodyBox(self):
+                return ["a"] * 6  # 非数值 → 拒收
+
+            def GetMassProperties(self, _d):
+                return [0.001, 0.0, 0.0, 1e-05]
+
+        doc = FakeAsmDoc(interferences=[
+            FakeInterference(4e-05, ["a-1", "a-2"], body=OddBoxBody()),
+        ])
+        row = check_interference(_asm_sw(doc))["data"]["interferences"][0]
+        self.assertIsNone(row["bbox_mm"])
+        self.assertEqual(row["center_mm"], [1.0, 0.0, 0.0])
+
+    def test_spatial_mass_properties_failure_keeps_bbox(self):
+        class ThrowingPropsBody:
+            def GetBodyBox(self):
+                return [0.0, 0.0, 0.0, 0.01, 0.01, 0.01]
+
+            def GetMassProperties(self, _d):
+                raise OSError("com detached")
+
+        doc = FakeAsmDoc(interferences=[
+            FakeInterference(4e-05, ["a-1", "a-2"], body=ThrowingPropsBody()),
+        ])
+        row = check_interference(_asm_sw(doc))["data"]["interferences"][0]
+        self.assertIsNone(row["center_mm"])
+        self.assertEqual(row["bbox_mm"], [0.0, 0.0, 0.0, 10.0, 10.0, 10.0])
+
+    def test_spatial_short_props_rejected(self):
+        class ShortPropsBody:
+            def GetBodyBox(self):
+                return [0.0] * 6
+
+            def GetMassProperties(self, _d):
+                return [0.001]  # len < 3 → center 拒收
+
+        doc = FakeAsmDoc(interferences=[
+            FakeInterference(4e-05, ["a-1", "a-2"], body=ShortPropsBody()),
+        ])
+        row = check_interference(_asm_sw(doc))["data"]["interferences"][0]
+        self.assertIsNone(row["center_mm"])
+        self.assertEqual(row["bbox_mm"], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
+    # --- _walk_feature_names：非字符串名断路 ---
+
+    def test_walk_breaks_on_non_string_names(self):
+        from solidworks_mcp.solidworks_api.assembly import _walk_feature_names
+
+        class OddNameDoc(FakeAsmDoc):
+            @property
+            def FirstFeature(self):
+                # 子特征名非 str → 子层断路；下一顶层名非 str → 顶层断路
+                return FakeFeature("配合", "MateGroup",
+                                   subs=[FakeFeature(456, "MateCoincident")],
+                                   next_feat=FakeFeature(789, "ICE"))
+
+        self.assertEqual(_walk_feature_names(OddNameDoc()), {"配合"})
+
+    # --- delete_mate / move / rotate：SW 未运行与参数闸门 ---
+
+    def test_delete_mate_not_running_is_structured(self):
+        sw = Mock()
+        sw.get_active_document.side_effect = SolidWorksNotRunningError("not running")
+        self.assertFalse(delete_mate(sw, "重合1")["success"])
+        sw.get_active_document.side_effect = RuntimeError("COM")
+        self.assertFalse(delete_mate(sw, "重合1")["success"])
+
+    def test_move_requires_assembly_document(self):
+        sw = Mock()
+        sw.get_active_document.return_value = None
+        self.assertFalse(move_component(sw, "box-1", 1, 0, 0)["success"])
+        self.assertEqual(move_component(sw, "", 1, 0, 0)["error"]["code"],
+                         "INVALID_PARAMETER")
+
+    def test_move_not_running_is_structured(self):
+        sw = Mock()
+        sw.get_active_document.side_effect = SolidWorksNotRunningError("not running")
+        self.assertFalse(move_component(sw, "box-1", 1, 0, 0)["success"])
+        sw.get_active_document.side_effect = RuntimeError("COM")
+        self.assertFalse(move_component(sw, "box-1", 1, 0, 0)["success"])
+
+    def test_rotate_gates_and_not_found(self):
+        sw = Mock()
+        sw.get_active_document.return_value = None
+        self.assertFalse(rotate_component(sw, "box-1", "z", 90)["success"])
+        self.assertEqual(rotate_component(sw, "", "z", 90)["error"]["code"],
+                         "INVALID_PARAMETER")
+        sw2, _mu = _math_sw(FakeAsmDoc(), None)
+        self.assertEqual(rotate_component(sw2, "ghost", "z", 90)["error"]["code"],
+                         "COMPONENT_NOT_FOUND")
+
+    def test_rotate_not_running_is_structured(self):
+        sw = Mock()
+        sw.get_active_document.side_effect = SolidWorksNotRunningError("not running")
+        self.assertFalse(rotate_component(sw, "box-1", "z", 90)["success"])
+        sw.get_active_document.side_effect = RuntimeError("COM")
+        self.assertFalse(rotate_component(sw, "box-1", "z", 90)["success"])
+
+    @patch("solidworks_mcp.solidworks_api.assembly.win32com.client.VARIANT",
+           side_effect=lambda vt, data: data)
+    def test_move_falls_back_to_identity_when_transform_unreadable(self, _v):
+        comp = _movable_comp()
+        comp.GetTotalTransform.side_effect = OSError("com detached")
+        sw, mu = _math_sw(FakeAsmDoc(), comp)
+        result = move_component(sw, "box-1", 5, 0, 0)
+        self.assertTrue(result["success"], result)
+        data = mu.CreateTransform.call_args[0][0]
+        self.assertEqual(data[9:12], [0.005, 0.0, 0.0])  # identity + delta
+        self.assertEqual(data[0:9], [1, 0, 0, 0, 1, 0, 0, 0, 1])
+
+    @patch("solidworks_mcp.solidworks_api.assembly.win32com.client.VARIANT",
+           side_effect=lambda vt, data: data)
+    def test_move_without_math_utility_is_sw_error(self, _v):
+        comp = _movable_comp()
+        doc = FakeAsmDoc(comps=[comp])
+        sw = _asm_sw(doc)
+        sw.app.GetMathUtility.return_value = None
+        result = move_component(sw, "box-1", 1, 0, 0)
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+        self.assertIn("math utility", result["message"])
+
+    @patch("solidworks_mcp.solidworks_api.assembly.win32com.client.VARIANT",
+           side_effect=lambda vt, data: data)
+    def test_move_transform_creation_none_is_sw_error(self, _v):
+        comp = _movable_comp()
+        sw, mu = _math_sw(FakeAsmDoc(), comp)
+        mu.CreateTransform.return_value = None
+        result = move_component(sw, "box-1", 1, 0, 0)
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+        self.assertIn("returned None", result["message"])
+
+    @patch("solidworks_mcp.solidworks_api.assembly.win32com.client.VARIANT",
+           side_effect=lambda vt, data: data)
+    def test_rotate_transform_failure_is_sw_error(self, _v):
+        comp = _movable_comp()
+        comp.SetTransformAndSolve3.return_value = False
+        sw, _mu = _math_sw(FakeAsmDoc(), comp)
+        result = rotate_component(sw, "box-1", "z", 90)
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+
+    # --- BOM：退化代理与字段形态防御 ---
+
+    def test_bom_body_fact_edge_shapes(self):
+        class ShortPropsBody:
+            def GetMassProperties(self, _d):
+                return [0.001, 0.0, 0.0]  # len <= 5 → 体积/质量全弃
+
+        class OddVolumeBody:
+            def GetMassProperties(self, _d):
+                return [0.0, 0.0, 0.0, "bad", 0.0, 0.04, 0, 0, 0, 0, 0, 0]
+
+        class InfMassBody:
+            def GetMassProperties(self, _d):
+                return [0.0, 0.0, 0.0, 1e-05, 0.0, float("inf"), 0, 0, 0, 0, 0, 0]
+
+        doc = FakeAsmDoc(comps=[
+            SimpleNamespace(Name2="a-1", GetPathName=lambda: "e:/a/a.SLDPRT",
+                            ReferencedConfiguration=lambda: "c",
+                            GetBody=lambda: ShortPropsBody(),
+                            GetMaterialIdName=lambda: ""),  # 空串 = 未设 → None
+            SimpleNamespace(Name2="b-1", GetPathName=lambda: "e:/a/b.SLDPRT",
+                            ReferencedConfiguration=lambda: "c",
+                            GetBody=lambda: OddVolumeBody(),
+                            GetMaterialIdName=lambda: "钢"),
+            SimpleNamespace(Name2="c-1", GetPathName=lambda: "e:/a/c.SLDPRT",
+                            ReferencedConfiguration=lambda: "c",
+                            GetBody=lambda: InfMassBody()),
+        ])
+        items = {i["name"]: i for i in get_bom(_asm_sw(doc))["data"]["items"]}
+        self.assertIsNone(items["a"]["volume_mm3"])
+        self.assertIsNone(items["a"]["mass_g"])
+        self.assertIsNone(items["a"]["material"])  # 空串 → None
+        self.assertIsNone(items["b"]["volume_mm3"])  # 非数值体积
+        self.assertEqual(items["b"]["mass_g"], 40.0)
+        self.assertEqual(items["b"]["material"], "钢")
+        self.assertEqual(items["c"]["volume_mm3"], 10000.0)
+        self.assertIsNone(items["c"]["mass_g"])  # 非有限质量
+        self.assertIsNone(items["c"]["material"])  # 缺成员 → None
+
+    def test_bom_skips_degenerate_and_non_string_fields(self):
+        doc = FakeAsmDoc(comps=[
+            SimpleNamespace(Name2=123),  # 非 str → 跳过不计入 total
+            SimpleNamespace(Name2="b-1",
+                            GetPathName=lambda: 99,  # 非 str → ""
+                            ReferencedConfiguration=lambda: None),  # 非 str → ""
+        ])
+        data = get_bom(_asm_sw(doc))["data"]
+        self.assertEqual(data["total_components"], 1)
+        item = data["items"][0]
+        self.assertEqual(item["name"], "")  # path "" → basename ""
+        self.assertEqual(item["path"], "")
+        self.assertEqual(item["configuration"], "")
 
 
 if __name__ == "__main__":

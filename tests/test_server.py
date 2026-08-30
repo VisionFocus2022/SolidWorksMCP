@@ -19,7 +19,7 @@ class TestServerRegistration(unittest.TestCase):
         tools = mcp._tool_manager.list_tools()
         resources = mcp._resource_manager.list_resources()
         prompts = mcp._prompt_manager.list_prompts()
-        self.assertEqual(len(tools), 60)
+        self.assertEqual(len(tools), 63)
         self.assertEqual(len(resources), 3)
         self.assertEqual(len(prompts), 5)
 
@@ -51,6 +51,19 @@ class TestServerRegistration(unittest.TestCase):
     def test_positive_dimensions_are_expressed_in_input_schema(self):
         tool = mcp._tool_manager.get_tool("solidworks_part_create_plate")
         self.assertEqual(tool.parameters["properties"]["width"]["exclusiveMinimum"], 0)
+
+    def test_n8_assembly_repair_tools_are_registered(self):
+        delete = mcp._tool_manager.get_tool("solidworks_assembly_delete_mate")
+        self.assertIsNotNone(delete)
+        self.assertTrue(delete.annotations.destructiveHint)
+        move = mcp._tool_manager.get_tool("solidworks_assembly_move_component")
+        self.assertIsNotNone(move)
+        self.assertEqual(move.parameters["properties"]["dx"]["type"], "number")
+        rotate = mcp._tool_manager.get_tool("solidworks_assembly_rotate_component")
+        self.assertIsNotNone(rotate)
+        self.assertEqual(
+            rotate.parameters["properties"]["axis"]["enum"], ["x", "y", "z"]
+        )
 
     def test_mate_type_is_an_enum(self):
         tool = mcp._tool_manager.get_tool("solidworks_assembly_add_mate")

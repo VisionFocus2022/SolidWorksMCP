@@ -37,6 +37,15 @@ logger = logging.getLogger(__name__)
 
 MAX_INTERFERENCES = 50
 MAX_COMPONENTS = 500
+MAX_TREE_WALK = 500
+IDENTITY_XFORM = (
+    1.0, 0.0, 0.0,
+    0.0, 1.0, 0.0,
+    0.0, 0.0, 1.0,
+    0.0, 0.0, 0.0,
+    1.0,
+    0.0, 0.0, 0.0,
+)
 
 ENTITY_TYPES = ("FACE", "PLANE", "AXIS", "EDGE", "VERTEX")
 REFERENCE_PLANE_ALIASES = {
@@ -204,9 +213,10 @@ def add_mate(
         mate_type: One of "coincident", "concentric", "distance", "tangent",
             "angle", "width". Real machine (T11 probe): coincident/distance/
             angle verified — angle mates must pass the value through the
-            ``Angle`` slot (parameter 10) in radians; tangent/width are
-            mapped but need face/4-selection fixtures and remain unverified
-            on this machine.
+            ``Angle`` slot (parameter 10) in radians; tangent verified via
+            the IEntity face-selection path (N8 probe_tangent_width);
+            width needs a 4-selection slot/tab fixture and remains
+            unverified (N15).
         entity1: Name of the first face/plane/axis (e.g. "Front Plane@Part1-1").
         entity2: Name of the second face/plane/axis.
         distance: Distance in mm (distance mate) or angle in degrees
@@ -404,11 +414,14 @@ def check_interference(sw_app: SolidWorksApp) -> dict:
                 for c in list(comps)[:MAX_COMPONENTS]
                 if isinstance((n := call_or_value(c, "Name2")), str)
             ]
+            center_mm, bbox_mm = _interference_spatial(inter)
             rows.append(
                 {
                     "volume_mm3": round(volume * 1e9, 3)
                     if isinstance(volume, (int, float))
                     else None,
+                    "center_mm": center_mm,
+                    "bbox_mm": bbox_mm,
                     "components": names,
                 }
             )
@@ -430,6 +443,363 @@ def check_interference(sw_app: SolidWorksApp) -> dict:
     except Exception as exc:
         logger.exception("Failed to check interference")
         return error_response(f"Failed to check interference: {exc}")
+
+
+def _interference_spatial(inter: Any) -> tuple:
+    """(center_mm, bbox_mm) for one interference (N8 probe).
+
+    Path: ``GetInterferenceBody()`` -> IBody2; ``GetBodyBox()`` returns the
+    6-value box in metres, ``GetMassProperties(1000)[0:3]`` the centroid in
+    metres. Returns (None, None) when the body is unavailable — spatial
+    facts must never break the interference report itself.
+    """
+    center_mm: Optional[List[float]] = None
+    bbox_mm: Optional[List[float]] = None
+    try:
+        body = call_or_value(inter, "GetInterferenceBody")
+        if body is not None:
+            box = call_or_value(body, "GetBodyBox")
+            if (
+                isinstance(box, (list, tuple))
+                and len(box) >= 6
+                and all(isinstance(v, (int, float)) for v in box[:6])
+            ):
+                bbox_mm = [round(v * 1000.0, 3) for v in box[:6]]
+            props = body.GetMassProperties(1000.0)
+            if (
+                isinstance(props, (list, tuple))
+                and len(props) >= 3
+                and all(isinstance(v, (int, float)) for v in props[:3])
+            ):
+                center_mm = [round(v * 1000.0, 3) for v in props[:3]]
+    except Exception:
+        logger.debug("interference body facts unavailable", exc_info=True)
+    return center_mm, bbox_mm
+
+
+def _walk_feature_names(model: Any, max_nodes: int = MAX_TREE_WALK) -> set:
+    """Feature names from the tree incl. one level of sub-features.
+
+    Mates live inside the MateGroup folder (N8 probe); a top-level-only
+    walk never sees them, so delete rechecks must descend one level. The
+    walk is bounded and bails on non-string names (degenerate proxy).
+    """
+    names = set()
+    feat = call_or_value(model, "FirstFeature")
+    steps = 0
+    while feat is not None and steps < max_nodes:
+        name = call_or_value(feat, "Name")
+        if not isinstance(name, str):
+            break
+        names.add(name)
+        sub = call_or_value(feat, "GetFirstSubFeature")
+        sub_steps = 0
+        while sub is not None and sub_steps < max_nodes:
+            sub_name = call_or_value(sub, "Name")
+            if not isinstance(sub_name, str):
+                break
+            names.add(sub_name)
+            sub = call_or_value(sub, "GetNextSubFeature")
+            sub_steps += 1
+        feat = call_or_value(feat, "GetNextFeature")
+        steps += 1
+    return names
+
+
+def delete_mate(sw_app: SolidWorksApp, mate_name: str) -> dict:
+    """Delete one mate from the active assembly (destructive).
+
+    Real machine (N8 probe): mates are selectable via SelectByID2 with
+    the "MATE" type only (BODYFEATURE/FEATURE both fail); success is
+    judged by the mate disappearing from the tree, not by the EditDelete
+    return value.
+    """
+    try:
+        if not mate_name:
+            return error_response(
+                "mate_name must be non-empty", code="INVALID_PARAMETER"
+            )
+        model = sw_app.get_active_document()
+        if model is None or call_or_value(model, "GetType") != swDocASSEMBLY:
+            return error_response("No active assembly document")
+
+        if mate_name not in _walk_feature_names(model):
+            return error_response(
+                f"Mate not found: {mate_name}", code="MATE_NOT_FOUND"
+            )
+
+        model.ClearSelection2(True)
+        picked = model.Extension.SelectByID2(
+            mate_name, "MATE", 0, 0, 0, False, 0, pythoncom.Nothing, 0
+        )
+        if not picked:
+            return error_response(
+                f"SolidWorks refused to select mate '{mate_name}'",
+                code="SW_API_ERROR",
+            )
+
+        call_or_value(model, "EditDelete")
+
+        if mate_name in _walk_feature_names(model):
+            return error_response(
+                f"SolidWorks rejected deleting '{mate_name}' "
+                f"(still in tree after EditDelete)",
+                code="SW_API_ERROR",
+            )
+        return success_response(
+            data={"deleted": mate_name},
+            message=f"Deleted mate '{mate_name}'",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to delete mate")
+        return error_response(f"Failed to delete mate: {exc}")
+
+
+def _find_component(model: Any, component_name: str) -> Optional[Any]:
+    comps = model.GetComponents(False) or []
+    for comp in list(comps)[:MAX_COMPONENTS]:
+        if call_or_value(comp, "Name2") == component_name:
+            return comp
+    return None
+
+
+def _current_xform16(comp: Any) -> List[float]:
+    """Current component transform as 16 floats (identity fallback).
+
+    SetTransformAndSolve3 is absolute, not incremental (N8 probe), so
+    deltas must be composed onto GetTotalTransform first. If the read
+    fails we fall back to identity — for a never-moved component both
+    are equivalent.
+    """
+    try:
+        xform = comp.GetTotalTransform(False)
+        data = call_or_value(xform, "ArrayData")
+        if isinstance(data, (list, tuple)) and len(data) >= 16:
+            return [float(v) for v in data[:16]]
+    except Exception:
+        logger.debug("GetTotalTransform unavailable; using identity", exc_info=True)
+    return list(IDENTITY_XFORM)
+
+
+def _mat_mul(a: List[float], b: List[float]) -> List[float]:
+    """3x3 row-major product a @ b."""
+    return [
+        sum(a[i * 3 + k] * b[k * 3 + j] for k in range(3))
+        for i in range(3)
+        for j in range(3)
+    ]
+
+
+def _mat_vec(m: List[float], v: List[float]) -> List[float]:
+    return [sum(m[i * 3 + k] * v[k] for k in range(3)) for i in range(3)]
+
+
+_ROTATIONS = {
+    "x": lambda c, s: [1.0, 0.0, 0.0, 0.0, c, -s, 0.0, s, c],
+    "y": lambda c, s: [c, 0.0, s, 0.0, 1.0, 0.0, -s, 0.0, c],
+    "z": lambda c, s: [c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0],
+}
+
+
+def _wrap_static(obj: Any, interface: str) -> Optional[Any]:
+    """Wrap a dynamic dispatch in its makepy static class (N5 pattern).
+
+    Transform calls are unreachable through dynamic dispatch (N8 diag
+    probe: ``CreateTransform`` with a VARIANT array raises
+    RPC_E_SERVER_FAULT); the generated classes accept the raw
+    ``PyIDispatch`` and restore the typed vtable signatures.
+    """
+    try:
+        from win32com.client import gencache
+
+        mods = gencache.GetModuleForProgID("SldWorks.Application")
+        raw = getattr(obj, "_oleobj_", None)
+        # Mock doubles auto-attribute ``_oleobj_``; only a real PyIDispatch
+        # can be handed to the generated class.
+        if mods is None or type(raw).__name__ != "PyIDispatch":
+            return None
+        return getattr(mods, interface)(raw)
+    except Exception:
+        logger.debug("%s static wrap failed", interface, exc_info=True)
+        return None
+
+
+def _apply_component_xform(
+    sw_app: SolidWorksApp, model: Any, comp: Any, data16: List[float]
+) -> Optional[str]:
+    """Push a 16-element transform to the component; None on success.
+
+    N8 probe: CreateTransform needs the full 16-element array (13 does
+    nothing), the typed wrapper is mandatory on this machine (dynamic
+    dispatch faults on the VARIANT array), and the interference detector
+    reads stale geometry until EditRebuild3 runs.
+    """
+    variant = win32com.client.VARIANT(
+        pythoncom.VT_ARRAY | pythoncom.VT_R8, data16
+    )
+    math_util = call_or_value(sw_app.app, "GetMathUtility")
+    if math_util is None:
+        return "SolidWorks refused to provide the math utility"
+    math_typed = _wrap_static(math_util, "IMathUtility") or math_util
+    xform = math_typed.CreateTransform(variant)
+    if xform is None:
+        return "CreateTransform returned None for the requested transform"
+    comp_typed = _wrap_static(comp, "IComponent2")
+    solver = (
+        comp_typed.SetTransformAndSolve3
+        if comp_typed is not None
+        else comp.SetTransformAndSolve3
+    )
+    if not solver(xform, True):
+        return "SetTransformAndSolve3 rejected the transform"
+    call_or_value(model, "EditRebuild3")
+    return None
+
+
+def move_component(
+    sw_app: SolidWorksApp, component_name: str, dx: float, dy: float, dz: float
+) -> dict:
+    """Translate one component by (dx, dy, dz) millimetres.
+
+    Real machine (N8 probe): TransformComponent2 is gone from SW 2026;
+    the working path is CreateTransform(16-element VARIANT) ->
+    SetTransformAndSolve3(xform, True) — absolute, so the delta is
+    composed onto GetTotalTransform — followed by EditRebuild3.
+    """
+    try:
+        if not component_name:
+            return error_response(
+                "component_name must be non-empty", code="INVALID_PARAMETER"
+            )
+        try:
+            dx = finite_number("dx", dx)
+            dy = finite_number("dy", dy)
+            dz = finite_number("dz", dz)
+        except ValueError as exc:
+            return error_response(str(exc), code="INVALID_PARAMETER")
+
+        model = sw_app.get_active_document()
+        if model is None or call_or_value(model, "GetType") != swDocASSEMBLY:
+            return error_response("No active assembly document")
+        comp = _find_component(model, component_name)
+        if comp is None:
+            return error_response(
+                f"Component not found: {component_name}",
+                code="COMPONENT_NOT_FOUND",
+            )
+
+        data = _current_xform16(comp)
+        data[9] += dx / 1000.0
+        data[10] += dy / 1000.0
+        data[11] += dz / 1000.0
+        failure = _apply_component_xform(sw_app, model, comp, data)
+        if failure:
+            return error_response(failure, code="SW_API_ERROR")
+
+        return success_response(
+            data={"component": component_name, "translation_mm": [dx, dy, dz]},
+            message=(
+                f"Moved component '{component_name}' by ({dx}, {dy}, {dz}) mm"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to move component")
+        return error_response(f"Failed to move component: {exc}")
+
+
+def rotate_component(
+    sw_app: SolidWorksApp, component_name: str, axis: str, angle_deg: float
+) -> dict:
+    """Rotate one component about an assembly axis (x/y/z) through the origin.
+
+    The rotation multiplies onto the current transform from the left
+    (world frame), so orientation and position both rotate about the
+    assembly origin (N8 probe composition rule).
+    """
+    try:
+        if not component_name:
+            return error_response(
+                "component_name must be non-empty", code="INVALID_PARAMETER"
+            )
+        axis_key = str(axis or "").lower()
+        if axis_key not in _ROTATIONS:
+            return error_response(
+                f"axis must be one of 'x', 'y', 'z' (got {axis!r})",
+                code="INVALID_PARAMETER",
+            )
+        try:
+            angle_deg = finite_number("angle_deg", angle_deg)
+        except ValueError as exc:
+            return error_response(str(exc), code="INVALID_PARAMETER")
+
+        model = sw_app.get_active_document()
+        if model is None or call_or_value(model, "GetType") != swDocASSEMBLY:
+            return error_response("No active assembly document")
+        comp = _find_component(model, component_name)
+        if comp is None:
+            return error_response(
+                f"Component not found: {component_name}",
+                code="COMPONENT_NOT_FOUND",
+            )
+
+        theta = math.radians(angle_deg)
+        rot = _ROTATIONS[axis_key](math.cos(theta), math.sin(theta))
+        data = _current_xform16(comp)
+        data[0:9] = _mat_mul(rot, data[0:9])
+        data[9:12] = _mat_vec(rot, data[9:12])
+        failure = _apply_component_xform(sw_app, model, comp, data)
+        if failure:
+            return error_response(failure, code="SW_API_ERROR")
+
+        return success_response(
+            data={
+                "component": component_name,
+                "axis": axis_key,
+                "angle_deg": angle_deg,
+            },
+            message=(
+                f"Rotated component '{component_name}' {angle_deg}° about {axis_key}"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to rotate component")
+        return error_response(f"Failed to rotate component: {exc}")
+
+
+def _component_body_facts(comp: Any) -> tuple:
+    """(volume_mm3, mass_g, material) for one component (N8 probe).
+
+    Path: ``comp.GetBody()`` -> ``GetMassProperties(1000)``: [3] volume in
+    m³, [5] mass in kg (= volume × density); ``GetMaterialIdName`` is ''
+    when the part has no material applied. Missing members yield Nones —
+    per-part facts never break the BOM aggregate.
+    """
+    volume_mm3 = mass_g = material = None
+    try:
+        body = call_or_value(comp, "GetBody")
+        if body is not None:
+            props = body.GetMassProperties(1000.0)
+            if isinstance(props, (list, tuple)) and len(props) > 5:
+                if isinstance(props[3], (int, float)):
+                    volume_mm3 = round(props[3] * 1e9, 3)
+                mass_kg = props[5]
+                if isinstance(mass_kg, (int, float)) and math.isfinite(mass_kg):
+                    mass_g = round(mass_kg * 1000.0, 3)
+    except Exception:
+        logger.debug("component body facts unavailable", exc_info=True)
+    try:
+        name = call_or_value(comp, "GetMaterialIdName")
+        if isinstance(name, str) and name:
+            material = name
+    except Exception:
+        logger.debug("GetMaterialIdName unavailable", exc_info=True)
+    return volume_mm3, mass_g, material
 
 
 def get_bom(sw_app: SolidWorksApp) -> dict:
@@ -458,11 +828,15 @@ def get_bom(sw_app: SolidWorksApp) -> dict:
             total += 1
             key = (path.lower(), config)
             if key not in items:
+                volume_mm3, mass_g, material = _component_body_facts(comp)
                 items[key] = {
                     "name": os.path.splitext(os.path.basename(path))[0],
                     "path": path,
                     "configuration": config,
                     "count": 0,
+                    "volume_mm3": volume_mm3,
+                    "mass_g": mass_g,
+                    "material": material,
                 }
             items[key]["count"] += 1
 

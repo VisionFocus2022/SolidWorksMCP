@@ -177,16 +177,40 @@ def main() -> int:
     asm_path = str(WORK_DIR / "e2e_asm.SLDASM")
     e2e.step("assembly.new", asm_api.new_assembly, sw, asm_path, True)
     e2e.step("assembly.add_component1", asm_api.add_component, sw, box_path, 0.0, 0.0, 0.0)
-    e2e.step("assembly.add_component2", asm_api.add_component, sw, box_path, 10.0, 0.0, 0.0)
+    added2 = e2e.step("assembly.add_component2", asm_api.add_component, sw, box_path, 10.0, 0.0, 0.0)
     overlap = e2e.step("assembly.check_interference1", asm_api.check_interference, sw)
     overlap_ok = bool((overlap.get("data") or {}).get("has_interference"))
     e2e.steps.append({"name": "assembly.expect_overlap", "success": overlap_ok,
                       "error": None if overlap_ok else {"code": "NO_INTERFERENCE", "details": overlap.get("message")}})
+    # --- N8 修复闭环：空间定位（center/bbox 非空）→ move_component 修复 → 复检归零 ---
+    rows = (overlap.get("data") or {}).get("interferences") or []
+    spatial_ok = bool(rows) and bool(rows[0].get("center_mm")) and bool(rows[0].get("bbox_mm"))
+    e2e.steps.append({"name": "assembly.expect_spatial", "success": spatial_ok,
+                      "error": None if spatial_ok else {"code": "NO_SPATIAL", "details": str(rows[:1])[:200]}})
+    second = ((added2.get("data") or {}).get("component_name")) or ""
+    if second:
+        e2e.step("assembly.move_component", asm_api.move_component, sw, second, 100.0, 0.0, 0.0)
+        fixed = e2e.step("assembly.check_interference3", asm_api.check_interference, sw)
+        fixed_ok = not bool((fixed.get("data") or {}).get("has_interference"))
+        e2e.steps.append({"name": "assembly.expect_repaired", "success": fixed_ok,
+                          "error": None if fixed_ok else {"code": "STILL_INTERFERING", "details": fixed.get("message")}})
+        dm = asm_api.delete_mate(sw, "重合999")  # 预期失败：不在树 → MATE_NOT_FOUND
+        dm_ok = (dm.get("error") or {}).get("code") == "MATE_NOT_FOUND"
+        e2e.steps.append({"name": "assembly.expect_mate_not_found", "success": dm_ok,
+                          "error": None if dm_ok else {"code": "WRONG_ERROR", "details": dm.get("message")}})
+    else:
+        e2e.steps.append({"name": "assembly.expect_component_name", "success": False,
+                          "error": {"code": "NO_COMPONENT_NAME", "details": str(added2)[:200]}})
     bom = e2e.step("assembly.get_bom1", asm_api.get_bom, sw)
     box_count = next((i["count"] for i in (bom.get("data") or {}).get("items") or []
                       if i.get("name") == "e2e_box"), 0)
     e2e.steps.append({"name": "assembly.expect_bom_2x", "success": box_count == 2,
                       "error": None if box_count == 2 else {"code": "BOM_MISMATCH", "details": f"count={box_count}"}})
+    box_item = next((i for i in (bom.get("data") or {}).get("items") or []
+                     if i.get("name") == "e2e_box"), {})
+    vol_ok = isinstance(box_item.get("volume_mm3"), (int, float)) and box_item["volume_mm3"] > 0
+    e2e.steps.append({"name": "assembly.expect_bom_volume", "success": vol_ok,
+                      "error": None if vol_ok else {"code": "NO_VOLUME", "details": str(box_item)[:200]}})
 
     e2e.step("assembly.new2", asm_api.new_assembly, sw)
     e2e.step("assembly.add_component3", asm_api.add_component, sw, box_path, 0.0, 0.0, 0.0)
