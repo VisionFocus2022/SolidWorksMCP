@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Annotated, Any, Callable, Dict, List, Literal, Optional, TypedDict
@@ -194,6 +195,24 @@ def _com_timeout() -> Optional[float]:
     return timeout if timeout > 0 else None
 
 
+def _poisoned_response() -> dict:
+    """Structured result for a poisoned COM executor with a recovery path.
+
+    N3: a poisoned executor cannot recover in-process; every later tool
+    call would fail. Return an actionable result, or exit outright when
+    SOLIDWORKS_MCP_POISONED_EXIT=1 so the stdio host's supervisor can
+    restart this server process.
+    """
+    if get_config().poisoned_exit:
+        sys.exit(1)
+    return error_response(
+        "COM 执行器已毒化（超时线程未返回），所有工具将失败。"
+        "恢复方法：重启 MCP 会话/服务器进程。",
+        data={"recovery": "restart-mcp-session"},
+        code="SW_EXECUTOR_POISONED",
+    )
+
+
 def _call_connected(
     operation: Callable[[Any], dict],
     launch_if_needed: Optional[bool] = None,
@@ -211,8 +230,8 @@ def _call_connected(
         return run_com(invoke, timeout=_com_timeout())
     except ComCallTimeoutError as exc:
         return error_response(str(exc), code="SW_TIMEOUT")
-    except ComExecutorPoisonedError as exc:
-        return error_response(str(exc), code="SW_EXECUTOR_POISONED")
+    except ComExecutorPoisonedError:
+        return _poisoned_response()
     except Exception as exc:
         logging.getLogger(__name__).exception("Unhandled SolidWorks tool error")
         return error_response(
@@ -449,8 +468,8 @@ def solidworks_connect(launch_if_needed: Optional[bool] = None) -> ToolResult:
         return run_com(_sw().connect, launch_if_needed, timeout=_com_timeout())
     except ComCallTimeoutError as exc:
         return error_response(str(exc), code="SW_TIMEOUT")
-    except ComExecutorPoisonedError as exc:
-        return error_response(str(exc), code="SW_EXECUTOR_POISONED")
+    except ComExecutorPoisonedError:
+        return _poisoned_response()
     except Exception as exc:
         logging.getLogger(__name__).exception("SolidWorks connection request failed")
         return error_response(

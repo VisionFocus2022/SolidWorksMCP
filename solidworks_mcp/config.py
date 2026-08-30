@@ -28,15 +28,15 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _env_positive_float(name: str) -> float:
+def _env_positive_float(name: str, default: float) -> float:
     value = os.getenv(name)
     if value is None:
-        return 0.0
+        return default
     try:
         parsed = float(value)
     except ValueError:
-        return 0.0
-    return parsed if parsed > 0 else 0.0
+        return default
+    return parsed if parsed > 0 else default
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,7 @@ class ServerConfig:
     drawing_template: str | None
     log_path: str
     com_timeout_seconds: float
+    poisoned_exit: bool
 
 
 def get_config() -> ServerConfig:
@@ -67,6 +68,7 @@ def get_config() -> ServerConfig:
             str(_project_root() / "solidworks_mcp.log"),
         ),
         com_timeout_seconds=_env_positive_float(
-            "SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS"
+            "SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS", 120.0
         ),
+        poisoned_exit=_env_bool("SOLIDWORKS_MCP_POISONED_EXIT", False),
     )

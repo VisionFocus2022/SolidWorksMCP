@@ -180,18 +180,18 @@ class TestComTimeout(unittest.TestCase):
             release.set()
             executor.shutdown()
 
-    def test_com_timeout_env_is_parsed_and_disabled_by_default(self):
-        self.assertIsNone(server._com_timeout())
+    def test_com_timeout_env_is_parsed_and_enabled_by_default(self):
+        self.assertEqual(server._com_timeout(), 120.0)
         with patch.dict(
             os.environ, {"SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS": "12.5"}
         ):
             self.assertEqual(server._com_timeout(), 12.5)
         with patch.dict(os.environ, {"SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS": "0"}):
-            self.assertIsNone(server._com_timeout())
+            self.assertEqual(server._com_timeout(), 120.0)
         with patch.dict(
             os.environ, {"SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS": "junk"}
         ):
-            self.assertIsNone(server._com_timeout())
+            self.assertEqual(server._com_timeout(), 120.0)
 
     def test_connect_maps_timeout_to_dedicated_error_code(self):
         from solidworks_mcp.utils.com_executor import ComCallTimeoutError

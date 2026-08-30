@@ -134,7 +134,8 @@ Tools 按领域分为：
 - SOLIDWORKS_MCP_ASSEMBLY_TEMPLATE
 - SOLIDWORKS_MCP_DRAWING_TEMPLATE
 - SOLIDWORKS_MCP_LOG_PATH
-- SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS（可选的 COM 调用超时，秒；超时后该 MCP server 需重启才能恢复工具，默认关闭）
+- SOLIDWORKS_MCP_COM_TIMEOUT_SECONDS（COM 调用超时，秒；默认 120，超时后 COM 执行器毒化、该 MCP server 需重启才能恢复工具；垃圾/非正数回退到 120）
+- SOLIDWORKS_MCP_POISONED_EXIT（默认 0；设 1 时 COM 执行器毒化即退出进程（exit 1），交由 stdio 宿主 supervisor 拉起重启，适用于无人值守长期运行场景）
 
 ## 测试
 
