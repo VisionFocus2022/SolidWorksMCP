@@ -30,6 +30,7 @@
 | probe_drawing.py | 建图/三视图/标注/导出 | 模板 GetUserPreferenceStringValue(10)；Create1stAngleViews2 恒 False→手动三视图；InsertModelAnnotations2(0,True,0,True,True,False) 唯一有效；PDF/PNG SaveAs3 | T12 |
 | probe_dim_organize_section.py | 尺寸遍历/删除/错开+剖视图 | GetDisplayDimensions 零参属性；删除链 GetNameForSelection→SelectByID2("DIMENSION")→DeleteSelection(True)；SetPosition 错开；CreateSectionViewAt4(x,y,0,草图名,0,0) | N4 |
 | probe_section_debug.py | 剖切线放置契约 | 剖切线必须画 sheet 空白区（视图区域上的线归视图草图→失败）；At5/ICreate/MakeSectionLine 全拒；SW 长会话后 InsertModelAnnotations2 可能零产出，重启恢复 | N4 |
+| probe_tolerance_finish_dxf.py | 公差/粗糙度/注释/DXF | IDimension 需 makepy 静态包装（mods.IDimension(dim._oleobj_)）；SetToleranceType(5)+SetToleranceValues(min,max 米)；粗糙度 14 参签名；CreateText2；DXF SaveAs3 恒返 1，判据=文件+SECTION 头 | N5 |
 
 ## probe_properties/ — 材料与属性域
 

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -12,6 +14,7 @@ from solidworks_mcp.solidworks_api.file_io import (
     _format_load_error,
     _guess_document_type,
     close_document,
+    export_dxf,
     export_step,
     export_stl,
     import_step,
@@ -238,6 +241,70 @@ class TestImportExport(unittest.TestCase):
         ):
             self.assertFalse(export_step(Mock(), "part.step")["success"])
             self.assertFalse(export_stl(Mock(), "part.stl")["success"])
+            self.assertFalse(export_dxf(Mock(), "drawing.dxf")["success"])
+
+
+class TestExportDXF(unittest.TestCase):
+    """N5：DXF 导出——SaveAs3 恒返警告 1，判据=文件存在+头含 SECTION（探针）。"""
+
+    def _patches(self, path):
+        return (
+            patch(
+                "solidworks_mcp.solidworks_api.file_io.validate_output_file",
+                return_value=(True, ""),
+            ),
+            patch(
+                "solidworks_mcp.solidworks_api.file_io.ensure_sink_path",
+                side_effect=lambda p: (True, "", p),
+            ),
+        )
+
+    def test_accepts_warning_code_with_valid_header(self):
+        model = Mock()
+        sw = Mock()
+        sw.get_active_document.return_value = model
+        with tempfile.TemporaryDirectory() as tmp:
+            dxf = os.path.join(tmp, "drawing.dxf")
+            Path(dxf).write_bytes(b"  0\r\nSECTION\r\n  2\r\nHEADER\r\n" + b"0" * 300)
+            vp, sp = self._patches(dxf)
+            with vp, sp:
+                model.SaveAs3.return_value = 1  # DXF 恒返警告 1（探针）
+                ok = export_dxf(sw, dxf)
+                self.assertTrue(ok["success"], ok)
+                self.assertEqual(ok["data"]["path"], dxf)
+                model.SaveAs3.return_value = 0  # 0 同样接受
+                self.assertTrue(export_dxf(sw, dxf)["success"])
+                model.SaveAs3.return_value = 9  # 其他错误码拒
+                self.assertFalse(export_dxf(sw, dxf)["success"])
+
+    def test_rejects_bad_header_or_missing_file(self):
+        model = Mock()
+        sw = Mock()
+        sw.get_active_document.return_value = model
+        model.SaveAs3.return_value = 1
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = os.path.join(tmp, "bad.dxf")
+            Path(bad).write_bytes(b"junk bytes without dxf marker")
+            missing = os.path.join(tmp, "missing.dxf")
+            vp, sp = self._patches(bad)
+            with vp, sp:
+                self.assertFalse(export_dxf(sw, bad)["success"])
+                self.assertFalse(export_dxf(sw, missing)["success"])
+
+    def test_rejects_wrong_extension_without_patches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            txt = os.path.join(tmp, "out.txt")
+            Path(txt).touch()
+            result = export_dxf(Mock(), txt)
+            self.assertFalse(result["success"])
+            self.assertEqual(result["error"]["code"], "INVALID_OUTPUT_PATH")
+
+    def test_requires_active_document(self):
+        sw = Mock()
+        sw.get_active_document.return_value = None
+        result = export_dxf(sw, "drawing.dxf")
+        self.assertFalse(result["success"])
+        self.assertIn("No active document", result["message"])
 
 
 if __name__ == "__main__":

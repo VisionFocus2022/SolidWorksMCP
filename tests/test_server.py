@@ -19,7 +19,7 @@ class TestServerRegistration(unittest.TestCase):
         tools = mcp._tool_manager.list_tools()
         resources = mcp._resource_manager.list_resources()
         prompts = mcp._prompt_manager.list_prompts()
-        self.assertEqual(len(tools), 56)
+        self.assertEqual(len(tools), 60)
         self.assertEqual(len(resources), 3)
         self.assertEqual(len(prompts), 5)
 
@@ -58,6 +58,26 @@ class TestServerRegistration(unittest.TestCase):
             tool.parameters["properties"]["mate_type"]["enum"],
             ["coincident", "concentric", "distance", "tangent", "angle", "width"],
         )
+
+    def test_n5_drawing_tools_forward_to_connected_call(self):
+        from solidworks_mcp import server
+
+        with patch.object(
+            server, "_call_connected", return_value={"success": True}
+        ) as call:
+            self.assertTrue(
+                server.solidworks_drawing_set_tolerance("D1@f", 0.1, -0.05)["success"]
+            )
+            self.assertTrue(
+                server.solidworks_drawing_insert_surface_finish(
+                    1.6, 100.0, 50.0
+                )["success"]
+            )
+            self.assertTrue(
+                server.solidworks_drawing_insert_note("x", 10.0, 10.0)["success"]
+            )
+            self.assertTrue(server.solidworks_file_export_dxf("d.dxf")["success"])
+        self.assertEqual(call.call_count, 4)
 
 
 class TestSolidWorksConnection(unittest.TestCase):

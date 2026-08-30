@@ -301,3 +301,54 @@ def export_stl(
     except Exception as exc:
         logger.exception("Failed to export STL")
         return error_response(f"Failed to export STL: {exc}")
+
+
+def export_dxf(
+    sw_app: SolidWorksApp,
+    file_path: str,
+    overwrite_confirm: bool = False,
+) -> dict:
+    """Export the active drawing to ASCII DXF (AC1015).
+
+    SolidWorks returns warning code 1 for every DXF SaveAs3 (probe-verified),
+    so success is judged by the file existing with a valid 'SECTION' header
+    instead of the return code.
+    """
+    try:
+        valid, msg = validate_output_file(file_path, {".dxf"}, overwrite_confirm)
+        if not valid:
+            return error_response(msg, code="INVALID_OUTPUT_PATH")
+
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document to export")
+
+        ok, message, sink_path = ensure_sink_path(file_path)
+        if not ok:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
+        result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
+        if result not in (0, 1):  # DXF exports return warning code 1 by default
+            return error_response(f"DXF export failed with code {result}")
+
+        try:
+            with open(sink_path, "rb") as handle:
+                head = handle.read(64)
+        except OSError:
+            return error_response(
+                f"DXF export reported success but no file was written: {sink_path}"
+            )
+        if b"SECTION" not in head:
+            return error_response(
+                "Exported file does not look like an ASCII DXF "
+                "(missing SECTION header)",
+                code="SW_API_ERROR",
+            )
+        return success_response(
+            data={"path": file_path, "size_bytes": os.path.getsize(sink_path)},
+            message=f"Exported DXF to: {file_path}",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to export DXF")
+        return error_response(f"Failed to export DXF: {exc}")

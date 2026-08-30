@@ -313,6 +313,17 @@ SECTION_LINE_HALF_M = 0.02  # probe-verified cut-line half length
 SECTION_LINE_CLEAR_M = 0.06  # cut-line centre sits this far outside the view
 SECTION_VIEW_OFFSET_M = 0.12  # default placement: 120 mm right of the source
 MAX_SHEET_COORD_M = 1.5
+# N5：公差/粗糙度/注释（探针 probe_tolerance_finish_dxf.py 5 轮收敛）
+TOLERANCE_PLUS_MINUS = 5  # swToleranceType_e；type=7 (Fit) 时 values 归零佐证序列
+MAX_TOLERANCE_MM = 100.0
+SURFACE_SYMBOL_TYPES = {
+    "basic": 0,
+    "remove_material": 1,
+    "no_remove_material": 2,
+}
+MIN_ROUGHNESS_UM = 0.008
+MAX_ROUGHNESS_UM = 100.0
+NOTE_TEXT_SIZE_M = 0.003  # CreateText2 width/height（探针实测可用值）
 
 
 class _DrawingError(Exception):
@@ -647,6 +658,234 @@ def insert_section_view(
     except Exception as exc:
         logger.exception("Failed to insert section view")
         return error_response(f"Failed to insert section view: {exc}")
+
+
+def _wrap_dimension_static(dim):
+    """Wrap a dynamic IDimension in its makepy static class.
+
+    Tolerance setters are unreachable through dynamic dispatch (probe round 4:
+    ``SetToleranceType`` reads back as an int property, bracket calls raise
+    TypeError); the generated ``IDimension`` class accepts the raw
+    ``PyIDispatch`` and restores the typed signatures.
+    """
+    try:
+        from win32com.client import gencache
+
+        mods = gencache.GetModuleForProgID("SldWorks.Application")
+        if mods is None:
+            return None
+        return mods.IDimension(dim._oleobj_)
+    except Exception:
+        logger.debug("IDimension static wrap failed", exc_info=True)
+        return None
+
+
+def set_tolerance(
+    sw_app: SolidWorksApp,
+    dimension_name: str,
+    upper_mm: float,
+    lower_mm: float,
+) -> dict:
+    """Set +/- tolerances on a display dimension (PlusMinus type).
+
+    ``dimension_name`` matches the dimension FullName exactly or without its
+    trailing part segment (e.g. 'D1@凸台-拉伸1' hits 'D1@凸台-拉伸1@probe.Part').
+    Both bounds are sheet millimetres and keep their sign (lower_mm=-0.05
+    renders as -0.05). Values are verified by reading them back.
+    """
+    try:
+        name = str(dimension_name or "").strip()
+        if not name:
+            return error_response(
+                "dimension_name must not be empty", code="INVALID_PARAMETER"
+            )
+        try:
+            upper_m = float(upper_mm) / 1000.0
+            lower_m = float(lower_mm) / 1000.0
+        except (TypeError, ValueError):
+            return error_response(
+                "upper_mm and lower_mm must be numbers", code="INVALID_PARAMETER"
+            )
+        if abs(float(upper_mm)) > MAX_TOLERANCE_MM or abs(float(lower_mm)) > MAX_TOLERANCE_MM:
+            return error_response(
+                f"tolerance bounds must stay within +/-{MAX_TOLERANCE_MM:g} mm",
+                code="INVALID_PARAMETER",
+            )
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+        if call_or_value(model, "GetType") != swDocDRAWING:
+            return error_response("Active document is not a drawing")
+
+        found = None
+        for _view_name, view in _model_views(model):
+            try:
+                dds = call_or_value(view, "GetDisplayDimensions") or ()
+            except Exception:
+                continue
+            for dd in dds:
+                try:
+                    dim = dd.GetDimension2(0)
+                    full = call_or_value(dim, "FullName")
+                except Exception:
+                    continue
+                if not isinstance(full, str):
+                    continue
+                if name in (full, full.rsplit("@", 1)[0]):
+                    found = (dim, full)
+                    break
+            if found:
+                break
+        if not found:
+            return error_response(
+                f"No display dimension matches {name!r}",
+                code="INVALID_PARAMETER",
+            )
+        dim, full = found
+
+        wrapper = _wrap_dimension_static(dim)
+        if wrapper is None:
+            return error_response(
+                "IDimension static wrapper unavailable (SldWorks typelib "
+                "cache missing); tolerance setters need the makepy class",
+                code="SW_API_ERROR",
+            )
+        wrapper.SetToleranceType(TOLERANCE_PLUS_MINUS)
+        wrapper.SetToleranceValues(lower_m, upper_m)
+        back_type = wrapper.GetToleranceType()
+        back_values = wrapper.GetToleranceValues()
+        call_or_value(model, "EditRebuild3")
+        return success_response(
+            data={
+                "dimension": full,
+                "tolerance_type": back_type,
+                "tolerance_values": back_values,
+                "upper_mm": float(upper_mm),
+                "lower_mm": float(lower_mm),
+            },
+            message=f"Set +{float(upper_mm):g}/-{abs(float(lower_mm)):g} mm tolerance on {full}",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to set tolerance")
+        return error_response(f"Failed to set tolerance: {exc}")
+
+
+def insert_surface_finish(
+    sw_app: SolidWorksApp,
+    value_um: float,
+    x_mm: float,
+    y_mm: float,
+    symbol: str = "remove_material",
+) -> dict:
+    """Insert a surface-finish symbol (default: remove-material + Ra value).
+
+    ``symbol`` picks the GB shape: basic / remove_material / no_remove_material.
+    Coordinates are sheet millimetres; the Ra text comes from ``value_um``
+    (0.008-100 um).
+    """
+    try:
+        sym_type = SURFACE_SYMBOL_TYPES.get(str(symbol or "").strip())
+        if sym_type is None:
+            return error_response(
+                f"symbol must be one of {sorted(SURFACE_SYMBOL_TYPES)}",
+                code="INVALID_PARAMETER",
+            )
+        try:
+            value = float(value_um)
+            x_m = float(x_mm) / 1000.0
+            y_m = float(y_mm) / 1000.0
+        except (TypeError, ValueError):
+            return error_response(
+                "value_um, x_mm and y_mm must be numbers", code="INVALID_PARAMETER"
+            )
+        if not (MIN_ROUGHNESS_UM <= value <= MAX_ROUGHNESS_UM):
+            return error_response(
+                f"value_um must be within [{MIN_ROUGHNESS_UM:g}, "
+                f"{MAX_ROUGHNESS_UM:g}]",
+                code="INVALID_PARAMETER",
+            )
+        if abs(x_m) > MAX_SHEET_COORD_M or abs(y_m) > MAX_SHEET_COORD_M:
+            return error_response(
+                "x_mm/y_mm exceed the printable sheet area",
+                code="INVALID_PARAMETER",
+            )
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+        if call_or_value(model, "GetType") != swDocDRAWING:
+            return error_response("Active document is not a drawing")
+
+        ok = model.InsertSurfaceFinishSymbol(
+            sym_type, 0, x_m, y_m, 0.0, 0, 0, 0.0, 0.0, "", "",
+            f"{value:g}", "", "",
+        )
+        if not ok:
+            return error_response(
+                "SolidWorks rejected the surface-finish symbol",
+                code="SW_API_ERROR",
+            )
+        call_or_value(model, "EditRebuild3")
+        return success_response(
+            data={
+                "symbol": symbol,
+                "symbol_type": sym_type,
+                "value_um": value,
+                "x_mm": float(x_mm),
+                "y_mm": float(y_mm),
+            },
+            message=(
+                f"Inserted surface-finish symbol ({symbol}, Ra {value:g} um) "
+                f"at ({float(x_mm):g}, {float(y_mm):g}) mm"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to insert surface finish symbol")
+        return error_response(f"Failed to insert surface finish symbol: {exc}")
+
+
+def insert_note(sw_app: SolidWorksApp, text: str, x_mm: float, y_mm: float) -> dict:
+    """Insert a plain text note (e.g. technical requirements) in sheet mm."""
+    try:
+        body = str(text or "")
+        if not body.strip():
+            return error_response("text must not be empty", code="INVALID_PARAMETER")
+        try:
+            x_m = float(x_mm) / 1000.0
+            y_m = float(y_mm) / 1000.0
+        except (TypeError, ValueError):
+            return error_response(
+                "x_mm and y_mm must be numbers", code="INVALID_PARAMETER"
+            )
+        if abs(x_m) > MAX_SHEET_COORD_M or abs(y_m) > MAX_SHEET_COORD_M:
+            return error_response(
+                "x_mm/y_mm exceed the printable sheet area",
+                code="INVALID_PARAMETER",
+            )
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+        if call_or_value(model, "GetType") != swDocDRAWING:
+            return error_response("Active document is not a drawing")
+
+        note = model.CreateText2(body, x_m, y_m, 0.0, NOTE_TEXT_SIZE_M, NOTE_TEXT_SIZE_M)
+        if note is None:
+            return error_response(
+                "SolidWorks rejected the note text", code="SW_API_ERROR"
+            )
+        call_or_value(model, "EditRebuild3")
+        return success_response(
+            data={"note": "created", "x_mm": float(x_mm), "y_mm": float(y_mm)},
+            message=f"Inserted note at ({float(x_mm):g}, {float(y_mm):g}) mm",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to insert note")
+        return error_response(f"Failed to insert note: {exc}")
 
 
 def _png_resolution(path: str) -> Optional[Dict[str, int]]:

@@ -212,8 +212,36 @@ def main() -> int:
     # N4：尺寸整理（去重+错开）与剖视图——入尺寸后、导出前
     e2e.step("drawing.organize_dimensions", drawing_api.organize_dimensions, sw)
     e2e.step("drawing.insert_section_view", drawing_api.insert_section_view, sw, "工程图视图1", 0.0, "vertical")
+    # N5：公差/粗糙度/注释——导出前；公差目标=第一个显示尺寸（FullName 动态取，避免硬编码特征名）
+    def _set_tol_on_first(sw_app):
+        from solidworks_mcp.utils.com import call_or_value
+        model = sw_app.get_active_document()
+        view = call_or_value(model, "GetFirstView")
+        for _ in range(50):
+            if view is None:
+                break
+            name = call_or_value(view, "Name")
+            if not isinstance(name, str):
+                break
+            for dd in call_or_value(view, "GetDisplayDimensions") or ():
+                try:
+                    full = call_or_value(dd.GetDimension2(0), "FullName")
+                except Exception:
+                    continue
+                if isinstance(full, str):
+                    return drawing_api.set_tolerance(sw_app, full, 0.10, -0.05)
+            view = call_or_value(view, "GetNextView")
+        return {"success": False, "data": None, "warning": None,
+                "message": "no display dimension found",
+                "error": {"code": "E2E_NO_DIM", "details": None}}
+
+    e2e.step("drawing.set_tolerance", _set_tol_on_first, sw)
+    e2e.step("drawing.insert_surface_finish", drawing_api.insert_surface_finish, sw, 1.6, 300.0, 40.0)
+    e2e.step("drawing.insert_note", drawing_api.insert_note, sw, "技术要求：未注公差按 GB/T 1804-m。", 50.0, 25.0)
     e2e.step("drawing.export_pdf", drawing_api.export_drawing_pdf, sw, str(WORK_DIR / "e2e_box_drawing.pdf"), True)
     e2e.step("drawing.export_png", drawing_api.export_drawing_png, sw, str(WORK_DIR / "e2e_box_drawing.png"), True)
+    from solidworks_mcp.solidworks_api import file_io as file_io_api
+    e2e.step("drawing.export_dxf", file_io_api.export_dxf, sw, str(WORK_DIR / "e2e_box_drawing.dxf"), True)
     # 工程图会隐式打开引用零件（文件锁），收尾必须全量释放
     try:
         sw.app.CloseAllDocuments(True)

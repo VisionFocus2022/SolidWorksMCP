@@ -81,6 +81,9 @@ class FakeDrawingDoc:
         self.delete_calls = []
         self.sketch_manager = FakeSketchManager(self)
         self.active_sketch = FakeSketch("草图1")
+        # N5：公差/粗糙度/注释 fake（探针真实形态见文件头）
+        self.text_calls = []
+        self.finish_calls = []
 
     @property
     def GetType(self):
@@ -172,6 +175,16 @@ class FakeDrawingDoc:
         self.views.append(view)
         self._relink()
         return view
+
+    def CreateText2(self, text, x, y, z, width, height):
+        self.text_calls.append((text, x, y, z, width, height))
+        return FakeNote(text)
+
+    def InsertSurfaceFinishSymbol(self, sym_type, leader_type, x, y, z, lay,
+                                  arrow, mach, other, prod, sample, max_rough,
+                                  min_rough, spacing):
+        self.finish_calls.append((sym_type, leader_type, x, y, z, max_rough))
+        return True
 
 
 class FakePartDoc:
@@ -525,6 +538,11 @@ class TestNotRunningPaths(unittest.TestCase):
         self.assertFalse(drawing.export_drawing_png(sw, "x.png")["success"])
         self.assertFalse(drawing.organize_dimensions(sw)["success"])
         self.assertFalse(drawing.insert_section_view(sw, "v", 0.0)["success"])
+        self.assertFalse(drawing.set_tolerance(sw, "D1", 0.1, -0.05)["success"])
+        self.assertFalse(
+            drawing.insert_surface_finish(sw, 1.6, 100.0, 50.0)["success"]
+        )
+        self.assertFalse(drawing.insert_note(sw, "x", 10.0, 10.0)["success"])
 
     def test_bare_mock_view_walk_breaks_on_sentinel(self):
         # 视图走查遇退化代理必须立即停（Name 非 str），空结果报 SW_NO_EFFECT
@@ -567,6 +585,36 @@ class FakeDimension:
 
 
 _dd_sequence = itertools.count(1)  # 模拟 SW 实例号（GetNameForSelection 带 -n 后缀）
+
+
+class FakeNote:
+    def __init__(self, text):
+        self.text = text
+
+
+class FakeStaticDimension:
+    """模拟 makepy 静态包装后的 IDimension（动态 dispatch 下 SetTolerance* 不可调）。"""
+
+    def __init__(self):
+        self.calls = []
+        self._type = 0
+        self._values = None
+
+    def SetToleranceType(self, value):
+        self.calls.append(("SetToleranceType", value))
+        self._type = value
+        return True
+
+    def SetToleranceValues(self, tol_min, tol_max):
+        self.calls.append(("SetToleranceValues", tol_min, tol_max))
+        self._values = (tol_min, tol_max)
+        return True
+
+    def GetToleranceType(self):
+        return self._type
+
+    def GetToleranceValues(self):
+        return self._values
 
 
 class FakeDisplayDimension:
@@ -837,6 +885,214 @@ class TestInsertSectionView(DrawingTestCase):
         result = drawing.insert_section_view(sw, "工程图视图1", 0.0, "vertical")
         self.assertFalse(result["success"])
         self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+
+
+class TestSetTolerance(DrawingTestCase):
+    FULL = "D1@凸台-拉伸1@probe.Part"
+
+    def _doc(self):
+        doc = FakeDrawingDoc()
+        doc.views.append(DimensionedView(
+            "工程图视图1",
+            [FakeDisplayDimension(self.FULL, "工程图视图1")],
+        ))
+        doc._relink()
+        return doc
+
+    def test_sets_plus_minus_with_metre_conversion(self):
+        sw, _ = self._sw(doc=self._doc())
+        wrap = FakeStaticDimension()
+        with patch.object(drawing, "_wrap_dimension_static", return_value=wrap):
+            result = drawing.set_tolerance(sw, self.FULL, 0.10, -0.05)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(
+            wrap.calls,
+            [("SetToleranceType", 5), ("SetToleranceValues", -5e-05, 1e-04)],
+        )
+        self.assertEqual(result["data"]["tolerance_type"], 5)
+        self.assertEqual(result["data"]["tolerance_values"], (-5e-05, 1e-04))
+
+    def test_short_dimension_name_suffix_matches(self):
+        # 'D1@凸台-拉伸1'（不含零件名）也应命中 FullName
+        sw, _ = self._sw(doc=self._doc())
+        with patch.object(drawing, "_wrap_dimension_static",
+                          return_value=FakeStaticDimension()):
+            result = drawing.set_tolerance(sw, "D1@凸台-拉伸1", 0.0, 0.0)
+        self.assertTrue(result["success"], result)
+
+    def test_unknown_dimension_name_is_rejected(self):
+        sw, _ = self._sw(doc=self._doc())
+        result = drawing.set_tolerance(sw, "D9@无此特征", 0.1, 0.0)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_wrap_failure_is_structured_error(self):
+        sw, _ = self._sw(doc=self._doc())
+        with patch.object(drawing, "_wrap_dimension_static", return_value=None):
+            result = drawing.set_tolerance(sw, self.FULL, 0.1, 0.0)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+
+    def test_tolerance_bounds_are_enforced(self):
+        sw, _ = self._sw()
+        for upper, lower in ((500.0, 0.0), (-500.0, 0.0), (0.0, 500.0)):
+            result = drawing.set_tolerance(sw, self.FULL, upper, lower)
+            self.assertFalse(result["success"])
+            self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_rejects_non_drawing_document(self):
+        sw = Mock()
+        sw.get_active_document.return_value = FakePartDoc()
+        result = drawing.set_tolerance(sw, self.FULL, 0.1, 0.0)
+        self.assertFalse(result["success"])
+        self.assertIn("not a drawing", result["message"])
+
+    def test_invalid_names_and_numbers_are_rejected_early(self):
+        sw, _ = self._sw()
+        self.assertEqual(
+            drawing.set_tolerance(sw, "  ", 0.1, 0.0)["error"]["code"],
+            "INVALID_PARAMETER",
+        )
+        self.assertEqual(
+            drawing.set_tolerance(sw, "D1", "x", 0.0)["error"]["code"],
+            "INVALID_PARAMETER",
+        )
+
+    def test_no_active_document_is_reported(self):
+        sw = Mock()
+        sw.get_active_document.return_value = None
+        self.assertFalse(drawing.set_tolerance(sw, "D1", 0.1, 0.0)["success"])
+
+
+class TestWrapDimensionStatic(unittest.TestCase):
+    def test_returns_none_for_objects_without_oleobj(self):
+        # 动态对象无 _oleobj_ 时 except 路径返回 None（不抛）
+        self.assertIsNone(drawing._wrap_dimension_static(object()))
+
+
+class TestInsertSurfaceFinish(DrawingTestCase):
+    def _doc(self):
+        doc = FakeDrawingDoc()
+        doc.views.append(DimensionedView("工程图视图1", []))
+        doc._relink()
+        return doc
+
+    def test_creates_remove_material_symbol(self):
+        doc = self._doc()
+        sw, _ = self._sw(doc=doc)
+
+        result = drawing.insert_surface_finish(sw, 1.6, 400.0, 50.0)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(doc.finish_calls, [(1, 0, 0.40, 0.05, 0.0, "1.6")])
+        self.assertEqual(result["data"]["symbol_type"], 1)
+        self.assertEqual(result["data"]["value_um"], 1.6)
+
+    def test_symbol_type_mapping_and_unknown(self):
+        sw, _ = self._sw(doc=self._doc())
+        ok = drawing.insert_surface_finish(sw, 3.2, 400.0, 50.0, symbol="basic")
+        self.assertTrue(ok["success"], ok)
+        self.assertEqual(ok["data"]["symbol_type"], 0)
+        bad = drawing.insert_surface_finish(sw, 3.2, 400.0, 50.0, symbol="bogus")
+        self.assertFalse(bad["success"])
+        self.assertEqual(bad["error"]["code"], "INVALID_PARAMETER")
+
+    def test_value_and_coordinate_bounds_are_enforced(self):
+        sw, _ = self._sw()
+        for value in (0.0, -1.6, 400.0):
+            result = drawing.insert_surface_finish(sw, value, 100.0, 50.0)
+            self.assertFalse(result["success"])
+            self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+        for x, y in ((2000.0, 50.0), (100.0, -2000.0)):
+            result = drawing.insert_surface_finish(sw, 1.6, x, y)
+            self.assertFalse(result["success"])
+            self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_sw_false_result_is_reported(self):
+        doc = self._doc()
+        doc.InsertSurfaceFinishSymbol = lambda *a: False
+        sw, _ = self._sw(doc=doc)
+        result = drawing.insert_surface_finish(sw, 1.6, 400.0, 50.0)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+
+    def test_rejects_non_drawing_document(self):
+        sw = Mock()
+        sw.get_active_document.return_value = FakePartDoc()
+        result = drawing.insert_surface_finish(sw, 1.6, 100.0, 50.0)
+        self.assertFalse(result["success"])
+        self.assertIn("not a drawing", result["message"])
+
+    def test_non_numeric_and_no_document_paths(self):
+        sw, _ = self._sw()
+        self.assertEqual(
+            drawing.insert_surface_finish(sw, "x", 1.0, 1.0)["error"]["code"],
+            "INVALID_PARAMETER",
+        )
+        idle = Mock()
+        idle.get_active_document.return_value = None
+        self.assertFalse(drawing.insert_surface_finish(idle, 1.6, 100.0, 50.0)["success"])
+
+
+class TestInsertNote(DrawingTestCase):
+    TEXT = "技术要求：未注公差按 GB/T 1804-m。"
+
+    def _doc(self):
+        doc = FakeDrawingDoc()
+        doc.views.append(DimensionedView("工程图视图1", []))
+        doc._relink()
+        return doc
+
+    def test_creates_note_with_sheet_mm(self):
+        doc = self._doc()
+        sw, _ = self._sw(doc=doc)
+
+        result = drawing.insert_note(sw, self.TEXT, 50.0, 30.0)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(
+            doc.text_calls, [(self.TEXT, 0.05, 0.03, 0.0, 0.003, 0.003)]
+        )
+        self.assertIn("note", result["data"])
+
+    def test_empty_text_is_rejected(self):
+        sw, _ = self._sw()
+        result = drawing.insert_note(sw, "  ", 50.0, 30.0)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_coordinate_bounds_are_enforced(self):
+        sw, _ = self._sw()
+        for x, y in ((2000.0, 30.0), (50.0, -2000.0)):
+            result = drawing.insert_note(sw, self.TEXT, x, y)
+            self.assertFalse(result["success"])
+            self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_sw_none_result_is_reported(self):
+        doc = self._doc()
+        doc.CreateText2 = lambda *a: None
+        sw, _ = self._sw(doc=doc)
+        result = drawing.insert_note(sw, self.TEXT, 50.0, 30.0)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+
+    def test_rejects_non_drawing_document(self):
+        sw = Mock()
+        sw.get_active_document.return_value = FakePartDoc()
+        result = drawing.insert_note(sw, "x", 50.0, 30.0)
+        self.assertFalse(result["success"])
+        self.assertIn("not a drawing", result["message"])
+
+    def test_non_numeric_and_no_document_paths(self):
+        sw, _ = self._sw()
+        self.assertEqual(
+            drawing.insert_note(sw, "text", "a", 1.0)["error"]["code"],
+            "INVALID_PARAMETER",
+        )
+        idle = Mock()
+        idle.get_active_document.return_value = None
+        self.assertFalse(drawing.insert_note(idle, "x", 10.0, 10.0)["success"])
 
 
 if __name__ == "__main__":

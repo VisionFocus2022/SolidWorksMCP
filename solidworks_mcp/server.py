@@ -43,6 +43,7 @@ from solidworks_mcp.solidworks_api.features import (
 )
 from solidworks_mcp.solidworks_api.file_io import (
     close_document,
+    export_dxf,
     export_step,
     export_stl,
     import_step,
@@ -60,8 +61,11 @@ from solidworks_mcp.solidworks_api.drawing import (
     export_drawing_pdf,
     export_drawing_png,
     insert_model_dimensions,
+    insert_note,
     insert_section_view,
+    insert_surface_finish,
     organize_dimensions,
+    set_tolerance,
 )
 from solidworks_mcp.solidworks_api.measure import get_bounding_box, measure_distance
 from solidworks_mcp.solidworks_api.part import (
@@ -316,7 +320,7 @@ def _capabilities() -> Dict[str, Any]:
             "Design plans currently support primitive bosses (box/plate/cylinder/cone), round cut holes, ISO threaded holes, and annular patterns.",
             "solidworks_part_create_ring_light generates a validated spherical-dome LED layout (row_counts is free-form, defaulting to the confirmed 9-row product layout); the native SLDPRT uses 24 annular bands when FeatureRevolve2 is unavailable.",
             "Assembly mates use the compatibility AddMate5 API for basic mate types.",
-            "Loft/sweep/complex surfaces, GD&T annotations, DXF export, simulation, and PDM are not yet exposed.",
+            "Loft/sweep/complex surfaces, GD&T feature-control frames, simulation, and PDM are not yet exposed.",
         ],
     }
 
@@ -871,6 +875,49 @@ def solidworks_drawing_insert_section_view(
     )
 
 
+@mcp.tool(title="Set dimension tolerance", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_drawing_set_tolerance(
+    dimension_name: NonEmptyString,
+    upper_mm: float,
+    lower_mm: float,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Set +/- tolerances (PlusMinus type) on a drawing display dimension. dimension_name matches the FullName exactly or without its trailing part segment (e.g. 'D1@SketchName'); bounds are sheet millimetres and keep their sign (lower_mm=-0.05 renders as -0.05). Readback values are returned."""
+    return _call_connected(
+        lambda sw: set_tolerance(sw, dimension_name, upper_mm, lower_mm),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Insert surface finish symbol", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_drawing_insert_surface_finish(
+    value_um: float = 1.6,
+    x_mm: float = 100.0,
+    y_mm: float = 50.0,
+    symbol: str = "remove_material",
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Insert a surface-finish symbol on the active drawing (default: remove-material Ra symbol). value_um is the Ra value in micrometres (0.008-100); x_mm/y_mm place the symbol in sheet millimetres; symbol picks the shape: basic / remove_material / no_remove_material."""
+    return _call_connected(
+        lambda sw: insert_surface_finish(sw, value_um, x_mm, y_mm, symbol),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Insert drawing note", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_drawing_insert_note(
+    text: NonEmptyString,
+    x_mm: float = 100.0,
+    y_mm: float = 50.0,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Insert a plain text note (e.g. technical requirements) on the active drawing at x_mm/y_mm in sheet millimetres."""
+    return _call_connected(
+        lambda sw: insert_note(sw, text, x_mm, y_mm),
+        launch_if_needed,
+    )
+
+
 @mcp.tool(title="Cut threaded hole", annotations=DESTRUCTIVE, structured_output=True)
 def solidworks_part_cut_threaded_hole(
     spec: NonEmptyString,
@@ -1064,6 +1111,19 @@ def solidworks_file_export_stl(
     """Export the active part to .stl under allowed_root."""
     return _call_connected(
         lambda sw: export_stl(sw, file_path, overwrite_confirm),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Export DXF", annotations=IDEMPOTENT_WRITE, structured_output=True)
+def solidworks_file_export_dxf(
+    file_path: NonEmptyString,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Export the active drawing to ASCII .dxf (AC1015) under allowed_root. SolidWorks returns a warning code for DXF saves; success is judged by a valid SECTION header in the written file."""
+    return _call_connected(
+        lambda sw: export_dxf(sw, file_path, overwrite_confirm),
         launch_if_needed,
     )
 

@@ -6,7 +6,7 @@
 
 ## 主要能力
 
-- 使用官方 Python MCP SDK，通过 stdio 提供 56 个 tools、3 个 resources、5 个 prompts
+- 使用官方 Python MCP SDK，通过 stdio 提供 60 个 tools、3 个 resources、5 个 prompts
 - 连接正在运行的 SolidWorks，或在明确允许时自动启动
 - 新建零件，创建板件、块体、圆柱体和圆孔
 - 生成 9 行球形穹顶环形灯零件（产品专用工具，代码位于 solidworks_mcp/examples/）
@@ -150,7 +150,7 @@ python -m coverage report
 
 ## 当前边界
 
-当前设计能力适合棱柱、圆柱、圆锥、板件、圆孔和螺纹孔等基础参数化零件，并支持环形阵列、旋转轮廓与工程图（三视图+尺寸+尺寸去重叠整理+剖视图+PDF/PNG 导出）。复杂草图约束、线性/草图驱动阵列、扫掠、放样、曲面、GD&T 标注、DXF 导出、仿真和 PDM 尚未作为稳定工具暴露。基础装配配合仍使用 SolidWorks 兼容 API，建议在正式生产装配上先使用副本验证。
+当前设计能力适合棱柱、圆柱、圆锥、板件、圆孔和螺纹孔等基础参数化零件，并支持环形阵列、旋转轮廓与工程图（三视图+尺寸+尺寸去重叠整理+剖视图+公差/粗糙度/注释+PDF/PNG/DXF 导出）。复杂草图约束、线性/草图驱动阵列、扫掠、放样、曲面、GD&T 形位公差框格、仿真和 PDM 尚未作为稳定工具暴露。基础装配配合仍使用 SolidWorks 兼容 API，建议在正式生产装配上先使用副本验证。
 ## 面向 AI 的工作流提示词
 
 MCP prompts（5 个）：`solidworks_design_part_prompt`（零件设计+感知精修工作流：
