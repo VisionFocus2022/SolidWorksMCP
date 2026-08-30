@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import itertools
 import os
 import struct
 import tempfile
@@ -74,6 +75,12 @@ class FakeDrawingDoc:
         self.unfolded = 0
         self.insert_calls = []
         self.save_calls = []
+        # N4：尺寸整理/剖视图 fake（探针真实形态见文件头）
+        self.sketch_lines = []
+        self.section_calls = []
+        self.delete_calls = []
+        self.sketch_manager = FakeSketchManager(self)
+        self.active_sketch = FakeSketch("草图1")
 
     @property
     def GetType(self):
@@ -133,6 +140,38 @@ class FakeDrawingDoc:
         self.save_calls.append(path)
         Path(path).write_bytes(_fake_bytes(path))
         return 0
+
+    # ---- N4：尺寸删除（SelectByID2 选择名）与剖视图 ----
+
+    def DeleteSelection(self, also_delete_unused):
+        """带参方法；删除最后一次 DIMENSION 选择命中的显示尺寸。"""
+        self.delete_calls.append(also_delete_unused)
+        dim_names = [n for n, t in self.ext.calls if t == "DIMENSION"]
+        if not dim_names:
+            return False
+        target = dim_names[-1]
+        for view in self.views:
+            for dd in getattr(view, "dims", ()):
+                if dd.sel_name == target and not dd.deleted:
+                    dd.deleted = True
+                    return True
+        return False
+
+    @property
+    def SketchManager(self):
+        return self.sketch_manager
+
+    @property
+    def GetActiveSketch2(self):
+        return self.active_sketch
+
+    def CreateSectionViewAt4(self, x, y, z, sketch_name, arrow_side, color):
+        self.section_calls.append((x, y, z, sketch_name))
+        self._section_count = getattr(self, "_section_count", 0) + 1
+        view = FakeView(f"剖面视图{chr(ord('A') + self._section_count - 1)}")
+        self.views.append(view)
+        self._relink()
+        return view
 
 
 class FakePartDoc:
@@ -484,6 +523,8 @@ class TestNotRunningPaths(unittest.TestCase):
         self.assertFalse(drawing.insert_model_dimensions(sw)["success"])
         self.assertFalse(drawing.export_drawing_pdf(sw, "x.pdf")["success"])
         self.assertFalse(drawing.export_drawing_png(sw, "x.png")["success"])
+        self.assertFalse(drawing.organize_dimensions(sw)["success"])
+        self.assertFalse(drawing.insert_section_view(sw, "v", 0.0)["success"])
 
     def test_bare_mock_view_walk_breaks_on_sentinel(self):
         # 视图走查遇退化代理必须立即停（Name 非 str），空结果报 SW_NO_EFFECT
@@ -492,6 +533,310 @@ class TestNotRunningPaths(unittest.TestCase):
         result = drawing.insert_model_dimensions(sw)
         self.assertFalse(result["success"])
         self.assertEqual(result["error"]["code"], "SW_NO_EFFECT")
+
+
+# ---------------------------------------------------------------------------
+# N4：尺寸整理 + 剖视图（探针 tools/probe_drawing/probe_dim_organize_section.py）
+# 实机契约：GetNameForSelection/GetAnnotation/GetDisplayDimensions 均为零参属性；
+# 删除链 = SelectByID2(选择名, "DIMENSION") → DeleteSelection(True)（带参）；
+# 剖视图链 = SketchManager.CreateLine → GetActiveSketch2().Name →
+# CreateSectionViewAt4(x, y, 0, 草图名, 0, 0)
+
+
+class FakeAnnotation:
+    def __init__(self, x, y, z):
+        self._position = (x, y, z)
+        self.set_calls = []
+
+    def GetPosition(self):
+        return self._position
+
+    def SetPosition(self, x, y, z):
+        self.set_calls.append((x, y, z))
+        self._position = (x, y, z)
+        return True
+
+
+class FakeDimension:
+    def __init__(self, full_name):
+        self.full_name = full_name
+
+    @property
+    def FullName(self):
+        return self.full_name
+
+
+_dd_sequence = itertools.count(1)  # 模拟 SW 实例号（GetNameForSelection 带 -n 后缀）
+
+
+class FakeDisplayDimension:
+    def __init__(self, full_name, view_name, x=0.33, y=0.19, z=-0.10):
+        self.dim = FakeDimension(full_name)
+        self.sel_name = f"{full_name}-{next(_dd_sequence)}@{view_name}"
+        self.ann = FakeAnnotation(x, y, z)
+        self.deleted = False
+
+    def GetDimension2(self, index):
+        return self.dim
+
+    @property
+    def GetNameForSelection(self):
+        return self.sel_name
+
+    @property
+    def GetAnnotation(self):
+        return self.ann
+
+
+class DimensionedView(FakeView):
+    def __init__(self, name, dims=(), x=0.15, y=0.10, z=0.0):
+        super().__init__(name)
+        self.dims = list(dims)
+        self.position = (x, y, z)
+
+    @property
+    def GetDisplayDimensions(self):
+        return tuple(d for d in self.dims if not d.deleted)
+
+    @property
+    def GetDisplayDimensionCount(self):
+        return len([d for d in self.dims if not d.deleted])
+
+    @property
+    def Position(self):
+        return self.position
+
+
+class FakeSketchManager:
+    def __init__(self, doc):
+        self.doc = doc
+
+    def CreateLine(self, x1, y1, z1, x2, y2, z2):
+        self.doc.sketch_lines.append((x1, y1, z1, x2, y2, z2))
+        return object()
+
+
+class FakeSketch:
+    def __init__(self, name):
+        self.name = name
+
+    @property
+    def Name(self):
+        return self.name
+
+
+class TestOrganizeDimensions(DrawingTestCase):
+    def _doc(self, *dimensioned_views):
+        doc = FakeDrawingDoc()
+        doc.views.extend(dimensioned_views)
+        doc._relink()
+        return doc
+
+    def test_dedupes_duplicate_fullname_within_view(self):
+        first = FakeDisplayDimension("D1@凸台-拉伸1@p.Part", "工程图视图1")
+        dup = FakeDisplayDimension("D1@凸台-拉伸1@p.Part", "工程图视图1")
+        other = FakeDisplayDimension("D2@草图1@p.Part", "工程图视图1")
+        doc = self._doc(DimensionedView("工程图视图1", [first, dup, other]))
+        sw, _ = self._sw(doc=doc)
+
+        result = drawing.organize_dimensions(sw, mode="dedupe")
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["data"]["deleted"], 1)
+        self.assertEqual(result["data"]["total_dimensions"], 2)
+        self.assertFalse(first.deleted)
+        self.assertTrue(dup.deleted)
+        # 删除链：SelectByID2(选择名, "DIMENSION") + DeleteSelection(True)
+        self.assertIn((dup.sel_name, "DIMENSION"), doc.ext.calls)
+        self.assertIn(True, doc.delete_calls)
+
+    def test_same_fullname_across_views_is_kept(self):
+        d1 = FakeDisplayDimension("D1@凸台-拉伸1@p.Part", "工程图视图1")
+        d2 = FakeDisplayDimension("D1@凸台-拉伸1@p.Part", "工程图视图2")
+        doc = self._doc(
+            DimensionedView("工程图视图1", [d1]),
+            DimensionedView("工程图视图2", [d2]),
+        )
+        sw, _ = self._sw(doc=doc)
+
+        result = drawing.organize_dimensions(sw, mode="dedupe")
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["data"]["deleted"], 0)
+        self.assertFalse(d1.deleted or d2.deleted)
+
+    def test_shift_staggers_overlapping_annotations(self):
+        low = FakeDisplayDimension("D1@凸台-拉伸1@p.Part", "工程图视图1",
+                                   x=0.33, y=0.190)
+        near = FakeDisplayDimension("D2@草图1@p.Part", "工程图视图1",
+                                    x=0.33, y=0.1905)
+        doc = self._doc(DimensionedView("工程图视图1", [low, near]))
+        sw, _ = self._sw(doc=doc)
+
+        result = drawing.organize_dimensions(sw, mode="shift", shift_step_mm=8.0)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["data"]["moved"], 1)
+        self.assertEqual(len(near.ann.set_calls), 1)
+        new_x, new_y, new_z = near.ann.set_calls[0]
+        self.assertAlmostEqual(new_x, 0.33)
+        self.assertAlmostEqual(new_y, 0.1905 + 0.008, places=6)
+        self.assertAlmostEqual(new_z, -0.10)
+        self.assertEqual(low.ann.set_calls, [])
+
+    def test_distant_annotations_are_not_shifted(self):
+        a = FakeDisplayDimension("D1@f@p.Part", "工程图视图1", y=0.19)
+        b = FakeDisplayDimension("D2@f@p.Part", "工程图视图1", y=0.25)
+        doc = self._doc(DimensionedView("工程图视图1", [a, b]))
+        sw, _ = self._sw(doc=doc)
+
+        result = drawing.organize_dimensions(sw, mode="shift")
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["data"]["moved"], 0)
+        self.assertEqual(a.ann.set_calls + b.ann.set_calls, [])
+
+    def test_dedupe_only_does_not_move(self):
+        first = FakeDisplayDimension("D1@f@p.Part", "工程图视图1")
+        dup = FakeDisplayDimension("D1@f@p.Part", "工程图视图1")
+        doc = self._doc(DimensionedView("工程图视图1", [first, dup]))
+        sw, _ = self._sw(doc=doc)
+
+        result = drawing.organize_dimensions(sw, mode="dedupe")
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(first.ann.set_calls + dup.ann.set_calls, [])
+
+    def test_view_name_scopes_operation(self):
+        dup = FakeDisplayDimension("D1@f@p.Part", "工程图视图1")
+        elsewhere = FakeDisplayDimension("D1@f@p.Part", "工程图视图2")
+        doc = self._doc(
+            DimensionedView(
+                "工程图视图1",
+                [FakeDisplayDimension("D1@f@p.Part", "工程图视图1"), dup],
+            ),
+            DimensionedView("工程图视图2", [elsewhere]),
+        )
+        sw, _ = self._sw(doc=doc)
+
+        result = drawing.organize_dimensions(
+            sw, view_name="工程图视图1", mode="dedupe"
+        )
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["data"]["deleted"], 1)
+        self.assertTrue(dup.deleted)
+        self.assertFalse(elsewhere.deleted)
+
+    def test_invalid_mode_is_rejected(self):
+        sw, _ = self._sw()
+        result = drawing.organize_dimensions(sw, mode="bogus")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_invalid_step_is_rejected(self):
+        sw, _ = self._sw()
+        for step in (0.0, -5.0, 1000.0):
+            result = drawing.organize_dimensions(sw, shift_step_mm=step)
+            self.assertFalse(result["success"])
+            self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_unknown_view_name_is_reported(self):
+        sw, _ = self._sw()
+        result = drawing.organize_dimensions(sw, view_name="不存在")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_rejects_non_drawing_document(self):
+        sw = Mock()
+        sw.get_active_document.return_value = FakePartDoc()
+        result = drawing.organize_dimensions(sw)
+        self.assertFalse(result["success"])
+        self.assertIn("not a drawing", result["message"])
+
+
+class TestInsertSectionView(DrawingTestCase):
+    def _doc(self):
+        doc = FakeDrawingDoc()
+        doc.views.append(DimensionedView("工程图视图1", [], x=0.15, y=0.10))
+        doc._relink()
+        return doc
+
+    def test_vertical_cut_creates_section_view(self):
+        doc = self._doc()
+        sw, _ = self._sw(doc=doc)
+
+        result = drawing.insert_section_view(sw, "工程图视图1", 0.0, "vertical")
+
+        self.assertTrue(result["success"], result)
+        # 剖切线竖直：x1==x2==锚点 x，画在视图下方空白区 y∈[锚-0.08, 锚-0.04]
+        (x1, y1, _z1, x2, y2, _z2) = doc.sketch_lines[0]
+        self.assertAlmostEqual(x1, 0.15)
+        self.assertAlmostEqual(x1, x2)
+        self.assertAlmostEqual(y1, 0.10 - 0.08)
+        self.assertAlmostEqual(y2, 0.10 - 0.04)
+        # 剖视图默认放源视图右侧 120mm，用活动草图名
+        self.assertEqual(doc.section_calls, [(0.15 + 0.12, 0.10, 0.0, "草图1")])
+        self.assertEqual(result["data"]["view_count"], 3)
+        self.assertIn("剖面视图", result["data"]["section_view"])
+
+    def test_horizontal_cut_draws_horizontal_line(self):
+        doc = self._doc()
+        sw, _ = self._sw(doc=doc)
+
+        result = drawing.insert_section_view(sw, "工程图视图1", 10.0, "horizontal")
+
+        self.assertTrue(result["success"], result)
+        (x1, y1, _z1, x2, y2, _z2) = doc.sketch_lines[0]
+        self.assertAlmostEqual(y1, 0.10 + 0.010)
+        self.assertAlmostEqual(y1, y2)
+        self.assertAlmostEqual(x1, 0.15 - 0.08)
+        self.assertAlmostEqual(x2, 0.15 - 0.04)
+
+    def test_custom_placement_is_used(self):
+        doc = self._doc()
+        sw, _ = self._sw(doc=doc)
+
+        result = drawing.insert_section_view(
+            sw, "工程图视图1", 0.0, "vertical", position_xy_mm=[300.0, 200.0]
+        )
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(doc.section_calls[0][:2], (0.30, 0.20))
+
+    def test_unknown_source_view_is_rejected(self):
+        sw, _ = self._sw(doc=self._doc())
+        result = drawing.insert_section_view(sw, "无此视图", 0.0, "vertical")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_bad_direction_is_rejected(self):
+        sw, _ = self._sw(doc=self._doc())
+        result = drawing.insert_section_view(sw, "工程图视图1", 0.0, "diagonal")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_out_of_bounds_cut_position_is_rejected(self):
+        sw, _ = self._sw(doc=self._doc())
+        for cut in (600.0, -600.0):
+            result = drawing.insert_section_view(sw, "工程图视图1", cut, "vertical")
+            self.assertFalse(result["success"])
+            self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_rejects_non_drawing_document(self):
+        sw = Mock()
+        sw.get_active_document.return_value = FakePartDoc()
+        result = drawing.insert_section_view(sw, "v", 0.0, "vertical")
+        self.assertFalse(result["success"])
+        self.assertIn("not a drawing", result["message"])
+
+    def test_section_view_failure_is_reported(self):
+        doc = self._doc()
+        doc.CreateSectionViewAt4 = lambda *a: None
+        sw, _ = self._sw(doc=doc)
+        result = drawing.insert_section_view(sw, "工程图视图1", 0.0, "vertical")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
 
 
 if __name__ == "__main__":

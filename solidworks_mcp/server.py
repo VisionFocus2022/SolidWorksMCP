@@ -60,6 +60,8 @@ from solidworks_mcp.solidworks_api.drawing import (
     export_drawing_pdf,
     export_drawing_png,
     insert_model_dimensions,
+    insert_section_view,
+    organize_dimensions,
 )
 from solidworks_mcp.solidworks_api.measure import get_bounding_box, measure_distance
 from solidworks_mcp.solidworks_api.part import (
@@ -314,7 +316,7 @@ def _capabilities() -> Dict[str, Any]:
             "Design plans currently support primitive bosses (box/plate/cylinder/cone), round cut holes, ISO threaded holes, and annular patterns.",
             "solidworks_part_create_ring_light generates a validated spherical-dome LED layout (row_counts is free-form, defaulting to the confirmed 9-row product layout); the native SLDPRT uses 24 annular bands when FeatureRevolve2 is unavailable.",
             "Assembly mates use the compatibility AddMate5 API for basic mate types.",
-            "Loft/sweep/complex surfaces, GD&T annotations, section views, DXF export, simulation, and PDM are not yet exposed.",
+            "Loft/sweep/complex surfaces, GD&T annotations, DXF export, simulation, and PDM are not yet exposed.",
         ],
     }
 
@@ -832,6 +834,39 @@ def solidworks_drawing_export_png(
     """Export the active drawing sheet to PNG (raster) under allowed_root."""
     return _call_connected(
         lambda sw: export_drawing_png(sw, file_path, overwrite_confirm),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Organize drawing dimensions", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_drawing_organize_dimensions(
+    view_name: str = "",
+    mode: str = "dedupe_shift",
+    shift_step_mm: float = 8.0,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Tidy overlapping dimensions in the active drawing: delete same-feature duplicates within each view, then stagger annotations closer than 2 mm apart by shift_step_mm (sheet mm). Run after solidworks_drawing_insert_dimensions; empty view_name processes every view."""
+    return _call_connected(
+        lambda sw: organize_dimensions(
+            sw, view_name or None, mode, shift_step_mm
+        ),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Insert section view", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_drawing_insert_section_view(
+    source_view_name: NonEmptyString,
+    cut_position_mm: float = 0.0,
+    direction: str = "vertical",
+    position_xy_mm: Optional[List[float]] = None,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Create a section view of source_view_name with a straight cut line (vertical/horizontal, offset cut_position_mm in sheet mm from the view anchor; the line is drawn in the blank strip below/left of the view — lines on top of a view never produce a section view). The section view lands 120 mm to the right unless position_xy_mm (sheet mm) is given; SolidWorks assigns the A/B/C label automatically."""
+    return _call_connected(
+        lambda sw: insert_section_view(
+            sw, source_view_name, cut_position_mm, direction, position_xy_mm
+        ),
         launch_if_needed,
     )
 

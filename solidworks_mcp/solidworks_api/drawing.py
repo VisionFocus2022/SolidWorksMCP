@@ -275,6 +275,380 @@ def insert_model_dimensions(sw_app: SolidWorksApp) -> dict:
         return error_response(f"Failed to insert model dimensions: {exc}")
 
 
+# ---------------------------------------------------------------------------
+# N4: dimension organize + section view (probe: tools/probe_drawing/
+# probe_dim_organize_section.py, 8 probe rounds, SW 2026):
+#
+# - ``view.GetDisplayDimensions`` / ``dd.GetNameForSelection`` /
+#   ``dd.GetAnnotation`` are zero-argument PROPERTIES on the dynamic dispatch;
+#   GetText returns empty strings (unusable as a dedupe key — use FullName).
+# - Delete route: ``Extension.SelectByID2(selname, "DIMENSION", ...)`` where
+#   selname is GetNameForSelection (FullName is REJECTED — returns False),
+#   then ``drawing.DeleteSelection(True)`` — DeleteSelection takes a boolean
+#   argument; calling it bare raises DISP_E_PARAMNOTFOUND.
+# - Stagger route: ``ann.GetPosition()`` / ``ann.SetPosition(x, y, z)`` return
+#   sheet metres. ``ann.Select3`` raises a type-mismatch com_error — never
+#   needed, selection goes through SelectByID2.
+# - Section view: the cut line MUST live in a SHEET-level sketch. Lines
+#   drawn on top of a model view are absorbed into that view's sketch and
+#   CreateSectionViewAt4 then returns None (probes 9-11). Drawing the line
+#   just OUTSIDE the view (vertical → below, horizontal → left of the view
+#   anchor, which IView.Position reports) reliably yields a real section
+#   view: ``SketchManager.CreateLine`` → ``GetActiveSketch2().Name`` →
+#   ``CreateSectionViewAt4(x, y, 0.0, sketchName, 0, 0)``. At5/
+#   ICreateSectionViewAt4 reject every argument shape tried; At/At2/At3/
+#   CreateSectionView likewise; At5 is not on the runtime dispatch.
+
+DIMENSION_SELECT_TYPE = "DIMENSION"
+ORGANIZE_MODES = ("dedupe", "shift", "dedupe_shift")
+DEFAULT_SHIFT_STEP_MM = 8.0
+MAX_SHIFT_STEP_MM = 100.0
+# Annotation centres closer than 2 sheet millimetres read as one pile.
+OVERLAP_GAP_M = 0.002
+MAX_DDS_PER_VIEW = 200
+
+SECTION_DIRECTIONS = ("vertical", "horizontal")
+MAX_CUT_OFFSET_MM = 500.0
+SECTION_LINE_HALF_M = 0.02  # probe-verified cut-line half length
+SECTION_LINE_CLEAR_M = 0.06  # cut-line centre sits this far outside the view
+SECTION_VIEW_OFFSET_M = 0.12  # default placement: 120 mm right of the source
+MAX_SHEET_COORD_M = 1.5
+
+
+class _DrawingError(Exception):
+    """Domain error carrying a structured code."""
+
+    def __init__(self, message: str, code: str = "SW_API_ERROR"):
+        super().__init__(message)
+        self.code = code
+
+
+def _active_drawing(sw_app: SolidWorksApp) -> Any:
+    """Return the active document, asserting it is a drawing (type 3)."""
+    model = sw_app.get_active_document()
+    if model is None:
+        raise _DrawingError("No active document")
+    doc_type = call_or_value(model, "GetType")
+    if doc_type != swDocDRAWING:
+        raise _DrawingError(
+            f"Active document is not a drawing (type={doc_type})"
+        )
+    return model
+
+
+def _model_views(model: Any) -> List[Tuple[str, Any]]:
+    """Walk the view chain, filtering out degenerate proxies."""
+    views: List[Tuple[str, Any]] = []
+    view = call_or_value(model, "GetFirstView")
+    for _ in range(MAX_VIEW_WALK):
+        if view is None:
+            break
+        name = call_or_value(view, "Name")
+        if not isinstance(name, str):
+            break
+        views.append((name, view))
+        view = call_or_value(view, "GetNextView")
+    return views
+
+
+def _collect_dimension_records(
+    model: Any, view_name: Optional[str]
+) -> List[Dict[str, Any]]:
+    """Per-view display dimensions with FullName / selection name / position.
+
+    Records whose COM members fail to resolve are skipped (their objects
+    stay untouched)."""
+    records: List[Dict[str, Any]] = []
+    for name, view in _model_views(model):
+        if view_name is not None and name != view_name:
+            continue
+        try:
+            count = call_or_value(view, "GetDisplayDimensionCount")
+        except Exception:
+            count = None
+        if not count:
+            continue
+        dds = call_or_value(view, "GetDisplayDimensions") or ()
+        for dd in list(dds)[:MAX_DDS_PER_VIEW]:
+            try:
+                full = call_or_value(dd.GetDimension2(0), "FullName")
+                selname = call_or_value(dd, "GetNameForSelection")
+                ann = call_or_value(dd, "GetAnnotation")
+                pos = ann.GetPosition()
+            except Exception as exc:
+                logger.debug("dimension member failed on %s: %r", name, exc)
+                continue
+            if not isinstance(full, str) or not isinstance(selname, str):
+                continue
+            records.append(
+                {"view": name, "dd": dd, "ann": ann, "full": full,
+                 "selname": selname, "pos": pos}
+            )
+    return records
+
+
+def _delete_dimension(model: Any, ext: Any, record: Dict[str, Any]) -> bool:
+    """SelectByID2(GetNameForSelection, "DIMENSION") + DeleteSelection(True)."""
+    selected = ext.SelectByID2(
+        record["selname"], DIMENSION_SELECT_TYPE, 0, 0, 0, False, 0,
+        pythoncom.Nothing, 0,
+    )
+    if not selected:
+        return False
+    return bool(model.DeleteSelection(True))
+
+
+def organize_dimensions(
+    sw_app: SolidWorksApp,
+    view_name: Optional[str] = None,
+    mode: str = "dedupe_shift",
+    shift_step_mm: float = DEFAULT_SHIFT_STEP_MM,
+) -> dict:
+    """De-duplicate and stagger dimensions in the active drawing.
+
+    ``dedupe`` removes same-FullName duplicates within one view (the first
+    occurrence is kept); ``shift`` staggers annotations that pile up closer
+    than 2 sheet millimetres by ``shift_step_mm`` along +Y.
+    """
+    try:
+        if mode not in ORGANIZE_MODES:
+            return error_response(
+                f"mode must be one of {', '.join(ORGANIZE_MODES)}, got {mode!r}",
+                code="INVALID_PARAMETER",
+            )
+        if not 0.0 < shift_step_mm <= MAX_SHIFT_STEP_MM:
+            return error_response(
+                f"shift_step_mm must be in (0, {MAX_SHIFT_STEP_MM:g}], got "
+                f"{shift_step_mm}",
+                code="INVALID_PARAMETER",
+            )
+
+        model = _active_drawing(sw_app)
+
+        known = [name for name, _ in _model_views(model)]
+        if view_name is not None and view_name not in known:
+            return error_response(
+                f"View {view_name!r} not found in the drawing; known views: "
+                f"{', '.join(known) or '<none>'}",
+                code="INVALID_PARAMETER",
+            )
+
+        extension = call_or_value(model, "Extension")
+        failures: List[Dict[str, str]] = []
+        deleted = 0
+
+        if "dedupe" in mode:
+            records = _collect_dimension_records(model, view_name)
+            seen = set()
+            for record in records:
+                key = (record["view"], record["full"])
+                if key not in seen:
+                    seen.add(key)
+                    continue
+                try:
+                    if _delete_dimension(model, extension, record):
+                        deleted += 1
+                    else:
+                        failures.append(
+                            {"selname": record["selname"],
+                             "error": "select or delete refused"}
+                        )
+                except Exception as exc:
+                    failures.append(
+                        {"selname": record["selname"],
+                         "error": repr(exc)[:180]}
+                    )
+            call_or_value(model, "EditRebuild3")
+
+        moved = 0
+        if "shift" in mode:
+            step_m = shift_step_mm / 1000.0
+            by_view: Dict[str, List[Dict[str, Any]]] = {}
+            for record in _collect_dimension_records(model, view_name):
+                by_view.setdefault(record["view"], []).append(record)
+            for group in by_view.values():
+                group.sort(key=lambda r: (r["pos"][1], r["pos"][0]))
+                prev = None
+                index = 0
+                for record in group:
+                    y = record["pos"][1]
+                    if prev is not None and abs(y - prev) < OVERLAP_GAP_M:
+                        index += 1
+                        try:
+                            x, _, z = record["pos"]
+                            if record["ann"].SetPosition(
+                                x, y + index * step_m, z
+                            ):
+                                moved += 1
+                            else:
+                                failures.append(
+                                    {"selname": record["selname"],
+                                     "error": "SetPosition returned False"}
+                                )
+                        except Exception as exc:
+                            failures.append(
+                                {"selname": record["selname"],
+                                 "error": repr(exc)[:180]}
+                            )
+                    else:
+                        index = 0
+                    prev = y
+            call_or_value(model, "EditRebuild3")
+
+        views = _view_reports(model)
+        return success_response(
+            data={
+                "mode": mode,
+                "view_name": view_name,
+                "deleted": deleted,
+                "moved": moved,
+                "total_dimensions": _total_dimensions(views),
+                "views": views,
+                "failures": failures,
+            },
+            message=(
+                f"Organized drawing dimensions: deleted {deleted} duplicates, "
+                f"staggered {moved} overlapping annotations"
+            ),
+        )
+    except _DrawingError as exc:
+        return error_response(str(exc), code=exc.code)
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to organize dimensions")
+        return error_response(f"Failed to organize dimensions: {exc}")
+
+
+def insert_section_view(
+    sw_app: SolidWorksApp,
+    source_view_name: str,
+    cut_position_mm: float = 0.0,
+    direction: str = "vertical",
+    position_xy_mm: Optional[List[float]] = None,
+) -> dict:
+    """Create a section view by cutting ``source_view_name`` with a line.
+
+    ``vertical`` draws a vertical cut line at anchor_x + cut offset, placed
+    in the blank strip BELOW the view; ``horizontal`` a horizontal line at
+    anchor_y + cut offset, LEFT of the view (sheet mm; the view anchor is
+    IView.Position, the view's lower-left). Lines drawn on top of a view are
+    absorbed into that view's sketch and never produce a section view — the
+    blank-strip placement is the probe-verified contract. The section view
+    lands 120 mm right of the view unless ``position_xy_mm`` (sheet mm) is
+    given; SolidWorks assigns the A/B/C label automatically.
+    """
+    try:
+        if direction not in SECTION_DIRECTIONS:
+            return error_response(
+                f"direction must be one of {', '.join(SECTION_DIRECTIONS)}, "
+                f"got {direction!r}",
+                code="INVALID_PARAMETER",
+            )
+        if not -MAX_CUT_OFFSET_MM <= cut_position_mm <= MAX_CUT_OFFSET_MM:
+            return error_response(
+                f"cut_position_mm must be within ±{MAX_CUT_OFFSET_MM:g}, got "
+                f"{cut_position_mm}",
+                code="INVALID_PARAMETER",
+            )
+        placement_m: Optional[Tuple[float, float]] = None
+        if position_xy_mm is not None:
+            if (
+                len(position_xy_mm) != 2
+                or not all(isinstance(v, (int, float)) for v in position_xy_mm)
+                or not all(abs(float(v)) / 1000.0 <= MAX_SHEET_COORD_M
+                           for v in position_xy_mm)
+            ):
+                return error_response(
+                    "position_xy_mm must be two numeric sheet coordinates "
+                    f"(mm, within ±{int(MAX_SHEET_COORD_M * 1000)} mm)",
+                    code="INVALID_PARAMETER",
+                )
+            placement_m = (
+                float(position_xy_mm[0]) / 1000.0,
+                float(position_xy_mm[1]) / 1000.0,
+            )
+
+        model = _active_drawing(sw_app)
+
+        views_now = _model_views(model)
+        source = next(
+            (v for n, v in views_now if n == source_view_name), None
+        )
+        if source is None:
+            known = [n for n, _ in views_now]
+            return error_response(
+                f"Source view {source_view_name!r} not found; known views: "
+                f"{', '.join(known) or '<none>'}",
+                code="INVALID_PARAMETER",
+            )
+
+        pos = call_or_value(source, "Position")
+        x0, y0 = float(pos[0]), float(pos[1])
+        cut_m = float(cut_position_mm) / 1000.0
+        if direction == "vertical":
+            # 竖直剖切线（x 固定）：画在视图下方空白区（y < 锚点必在视图外）
+            line = (x0 + cut_m,
+                    y0 - SECTION_LINE_CLEAR_M - SECTION_LINE_HALF_M, 0.0,
+                    x0 + cut_m,
+                    y0 - SECTION_LINE_CLEAR_M + SECTION_LINE_HALF_M, 0.0)
+        else:
+            # 水平剖切线（y 固定）：画在视图左侧空白区（x < 锚点必在视图外）
+            line = (x0 - SECTION_LINE_CLEAR_M - SECTION_LINE_HALF_M,
+                    y0 + cut_m, 0.0,
+                    x0 - SECTION_LINE_CLEAR_M + SECTION_LINE_HALF_M,
+                    y0 + cut_m, 0.0)
+
+        sketch_manager = call_or_value(model, "SketchManager")
+        sketch_manager.CreateLine(*line)
+        sketch = call_or_value(model, "GetActiveSketch2")
+        sketch_name = call_or_value(sketch, "Name")
+        if not isinstance(sketch_name, str) or not sketch_name:
+            return error_response(
+                "Drawing did not activate a sketch after drawing the cut line",
+                code="SW_API_ERROR",
+            )
+
+        place = placement_m or (x0 + SECTION_VIEW_OFFSET_M, y0)
+        section = model.CreateSectionViewAt4(
+            place[0], place[1], 0.0, sketch_name, 0, 0
+        )
+        if section is None:
+            return error_response(
+                "SolidWorks refused to create the section view "
+                f"(sketch {sketch_name!r}, placement {place})",
+                code="SW_API_ERROR",
+            )
+        call_or_value(model, "EditRebuild3")
+
+        section_name = call_or_value(section, "Name")
+        views = _view_reports(model)
+        return success_response(
+            data={
+                "source_view": source_view_name,
+                "direction": direction,
+                "cut_line_m": [round(v, 6) for v in line[:2] + line[3:5]],
+                "sketch": sketch_name,
+                "placement_m": [round(place[0], 6), round(place[1], 6)],
+                "section_view": section_name,
+                "view_count": len(views),
+                "views": views,
+            },
+            message=(
+                f"Created section view {section_name!r} from "
+                f"{source_view_name!r} ({direction} cut, offset "
+                f"{cut_position_mm:g} mm)"
+            ),
+        )
+    except _DrawingError as exc:
+        return error_response(str(exc), code=exc.code)
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to insert section view")
+        return error_response(f"Failed to insert section view: {exc}")
+
+
 def _png_resolution(path: str) -> Optional[Dict[str, int]]:
     """Read the IHDR chunk (no imaging dependency needed for line art)."""
     try:

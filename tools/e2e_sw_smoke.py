@@ -209,6 +209,9 @@ def main() -> int:
 
     e2e.step("drawing.create_from_part", drawing_api.create_drawing_from_part, sw, box_path)
     e2e.step("drawing.insert_dimensions", drawing_api.insert_model_dimensions, sw)
+    # N4：尺寸整理（去重+错开）与剖视图——入尺寸后、导出前
+    e2e.step("drawing.organize_dimensions", drawing_api.organize_dimensions, sw)
+    e2e.step("drawing.insert_section_view", drawing_api.insert_section_view, sw, "工程图视图1", 0.0, "vertical")
     e2e.step("drawing.export_pdf", drawing_api.export_drawing_pdf, sw, str(WORK_DIR / "e2e_box_drawing.pdf"), True)
     e2e.step("drawing.export_png", drawing_api.export_drawing_png, sw, str(WORK_DIR / "e2e_box_drawing.png"), True)
     # 工程图会隐式打开引用零件（文件锁），收尾必须全量释放
