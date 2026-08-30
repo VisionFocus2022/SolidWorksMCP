@@ -269,6 +269,79 @@ def cut_round_hole(
         return error_response(f"Failed to cut round hole: {exc}")
 
 
+def create_linear_holes(
+    sw_app: SolidWorksApp,
+    diameter: float,
+    x: float,
+    y: float,
+    plane: str = "top",
+    count: int = 2,
+    spacing: float = 10.0,
+    direction: str = "x",
+    depth: Optional[float] = None,
+    through_all: bool = True,
+) -> dict:
+    """Cut a linear row of round holes (non-native rebuilt primitives).
+
+    SW 2026 exposes no working COM path for FeatureLinearPattern4 on this
+    machine (13-probe evidence, tools/probe_part/probe_n9_unblock.py), so
+    this loops the native cut primitive instead of creating a parametric
+    pattern feature — NOT parametric-linked to a seed feature.
+    """
+    try:
+        try:
+            count = int(count)
+        except (TypeError, ValueError):
+            count = -1
+        if count < 1 or count > 200:
+            return error_response(
+                "count must be between 1 and 200", code="INVALID_PARAMETER"
+            )
+        if direction not in ("x", "y"):
+            return error_response(
+                "direction must be 'x' or 'y'", code="INVALID_PARAMETER"
+            )
+        spacing = positive_number("spacing", spacing)
+
+        cut: List[Dict[str, Any]] = []
+        for i in range(count):
+            hx = x + i * spacing if direction == "x" else x
+            hy = y + i * spacing if direction == "y" else y
+            result = cut_round_hole(
+                sw_app, diameter, hx, hy, plane, depth, through_all
+            )
+            if not result.get("success"):
+                return error_response(
+                    f"Hole {i + 1}/{count} failed: "
+                    f"{result.get('message')}",
+                    code=(result.get("error") or {}).get(
+                        "code", "SW_API_ERROR"
+                    ),
+                )
+            cut.append({"index": i + 1, "x": hx, "y": hy})
+
+        return success_response(
+            data={
+                "holes": cut,
+                "count": count,
+                "direction": direction,
+                "spacing": spacing,
+                "diameter": diameter,
+                "native": False,
+            },
+            message=(
+                f"Cut {count} holes along {direction} at {spacing}mm spacing"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to create linear holes")
+        return error_response(f"Failed to create linear holes: {exc}")
+
+
 # Through-all hole mouths sit at unknown distances along the sketch-plane
 # normal (they meet the part surfaces, not the sketch plane), so the
 # coordinate-based EDGE pick sweeps these offsets in metres.

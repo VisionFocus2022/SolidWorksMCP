@@ -343,6 +343,94 @@ def main() -> int:
         e2e.steps.append({"name": "csg.cleanup", "success": False,
                           "error": {"code": "EXCEPTION", "details": repr(exc)}})
 
+    # --- N9 解锁链：镜像/拔模/真实螺纹原生 + 线性孔阵（数学替代）---
+    # 契约来自 tools/probe_part/probe_n9_unblock.py 13 轮实机探针（2026-08-30）：
+    # mirror=BODYFEATURE mark1+PLANE mark2→InsertMirrorFeature2(False,True,True,False,0)；
+    # draft=拔模面 Select2(False,1)+中性面 Select2(True,2)→typed InsertMultiFaceDraft；
+    # thread=顶面圆→InsertHelix→REFERENCECURVES mark4→typed InsertCutSwept5(Alignment=False)；
+    # pattern 三路线均 BLOCKED → 线性孔阵走数学替代（循环 cut_round_hole）。
+
+    def _volume_mm3(sw_app) -> "float | None":
+        mp = part.get_mass_properties(sw_app)
+        v = (mp.get("data") or {}).get("volume")
+        return v * 1_000_000_000.0 if isinstance(v, (int, float)) else None
+
+    def _feature_names() -> "list[str]":
+        return (features.get_features(sw).get("data") or {}).get("features") or []
+
+    # 镜像：盒+偏心穿孔→镜像切除特征→对称位出孔（ΔV≈孔体积 1005mm³，探针实测）
+    e2e.step("n9.mirror_create_box", part.create_box, sw, 60.0, 40.0, 20.0,
+             str(WORK_DIR / "e2e_n9_mirror.SLDPRT"), True)
+    e2e.step("n9.mirror_cut_hole", design.cut_round_hole, sw, 8.0, 15.0, 0.0, "top", None, True)
+    mv0 = _volume_mm3(sw)
+    cut_name = next((n for n in _feature_names() if n.startswith("切除")), None)
+    if cut_name and mv0 is not None:
+        e2e.step("n9.mirror_feature", features.mirror_feature, sw, cut_name, "right")
+        mv1 = _volume_mm3(sw)
+        mirrored = mv1 is not None and 900 < (mv0 - mv1) < 1100
+        e2e.steps.append({"name": "n9.mirror_expect_dv", "success": mirrored,
+                          "error": None if mirrored else {"code": "DV_MISMATCH",
+                                                          "details": f"{mv0} -> {mv1}"}})
+    else:
+        e2e.steps.append({"name": "n9.mirror_feature", "success": False,
+                          "error": {"code": "NO_CUT_FEATURE", "details": cut_name}})
+
+    # 拔模：盒侧面 3° 外拔、底面中性（探针实测 48000→50516mm³）
+    # create_box 是 get-or-create 语义：每段必须先关闭上一文档，否则凸台堆料
+    e2e.step("n9.mirror_doc_close", file_io.close_document, sw, False)
+    e2e.step("n9.draft_create_box", part.create_box, sw, 60.0, 40.0, 20.0,
+             str(WORK_DIR / "e2e_n9_draft.SLDPRT"), True)
+    dfl = e2e.step("n9.draft_list_faces", topology.list_faces, sw)
+    dfaces = (dfl.get("data") or {}).get("faces") or []
+    d_side = next((f["name"] for f in dfaces if f.get("area_mm2") == 800.0), None)
+    d_bottom = next((f["name"] for f in dfaces if f.get("area_mm2") == 2400.0), None)
+    if d_side and d_bottom:
+        e2e.step("n9.apply_draft", features.apply_draft, sw, d_side, d_bottom, 3.0)
+        dv1 = _volume_mm3(sw)
+        # SW MultiFace 拔模会传播到周向全部侧面（实机取证：4 侧面面积全变），
+        # ΔV 取决于中性面选中顶/底：3773(顶)/2516(底)，断言取宽区间覆盖两种遍历序
+        drafted = dv1 is not None and 2000 < (dv1 - 48000.0) < 4200
+        e2e.steps.append({"name": "n9.draft_expect_dv", "success": drafted,
+                          "error": None if drafted else {"code": "DV_MISMATCH",
+                                                         "details": f"48000 -> {dv1}"}})
+    else:
+        e2e.steps.append({"name": "n9.apply_draft", "success": False,
+                          "error": {"code": "NO_FACES", "details": f"side={d_side} bottom={d_bottom}"}})
+
+    # 真实螺纹：⌀20×50 圆柱 helix 扫掠切除（探针实测 ΔV≈55，CircularProfile 半嵌入）
+    e2e.step("n9.draft_doc_close", file_io.close_document, sw, False)
+    e2e.step("n9.thread_create_cylinder", part.create_cylinder, sw, 20.0, 50.0,
+             str(WORK_DIR / "e2e_n9_thread.SLDPRT"), True)
+    tv0 = _volume_mm3(sw)
+    e2e.step("n9.cut_real_thread", features.cut_real_thread, sw, 20.0, 2.5, 20.0)
+    swept = any("扫描" in n for n in _feature_names())
+    e2e.steps.append({"name": "n9.thread_expect_feature", "success": swept,
+                      "error": None if swept else {"code": "NO_SWEEP",
+                                                   "details": _feature_names()[-4:]}})
+    tv1 = _volume_mm3(sw)
+    threaded = tv0 is not None and tv1 is not None and 5 < (tv0 - tv1) < 500
+    e2e.steps.append({"name": "n9.thread_expect_dv", "success": threaded,
+                      "error": None if threaded else {"code": "DV_MISMATCH",
+                                                      "details": f"{tv0} -> {tv1}"}})
+
+    # 线性孔阵（数学替代，pattern BLOCKED 兜底）：3×⌀6 穿孔 ΔV≈1696mm³
+    e2e.step("n9.thread_doc_close", file_io.close_document, sw, False)
+    e2e.step("n9.holes_create_box", part.create_box, sw, 60.0, 40.0, 20.0,
+             str(WORK_DIR / "e2e_n9_holes.SLDPRT"), True)
+    e2e.step("n9.create_linear_holes", design.create_linear_holes,
+             sw, 6.0, 10.0, 0.0, "top", 3, 8.0, "x", None, True)
+    hv1 = _volume_mm3(sw)
+    drilled = hv1 is not None and 1600 < (48000.0 - hv1) < 1800
+    e2e.steps.append({"name": "n9.holes_expect_dv", "success": drilled,
+                      "error": None if drilled else {"code": "DV_MISMATCH",
+                                                     "details": f"48000 -> {hv1}"}})
+    try:
+        sw.app.CloseAllDocuments(True)
+        e2e.steps.append({"name": "n9.cleanup", "success": True})
+    except Exception as exc:
+        e2e.steps.append({"name": "n9.cleanup", "success": False,
+                          "error": {"code": "EXCEPTION", "details": repr(exc)}})
+
     e2e.write_report()
     return 1 if e2e.failed else 0
 

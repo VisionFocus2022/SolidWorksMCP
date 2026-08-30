@@ -29,6 +29,7 @@ from solidworks_mcp.solidworks_api.assembly import (
 )
 from solidworks_mcp.solidworks_api.design import (
     DESIGN_PLAN_OPERATIONS,
+    create_linear_holes,
     create_new_part,
     create_plate,
     cut_round_hole,
@@ -37,9 +38,12 @@ from solidworks_mcp.solidworks_api.design import (
     rebuild_csg_plan,
 )
 from solidworks_mcp.solidworks_api.features import (
+    apply_draft,
+    cut_real_thread,
     delete_feature,
     get_feature_details,
     get_features,
+    mirror_feature,
     rename_feature,
     set_dimension,
     set_feature_suppression,
@@ -945,6 +949,70 @@ def solidworks_part_cut_threaded_hole(
         lambda sw: cut_threaded_hole(
             sw, spec, x, y, plane, depth, through_all
         ),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Cut real helical thread", annotations=DESTRUCTIVE, structured_output=True)
+def solidworks_part_cut_real_thread(
+    diameter: PositiveMM,
+    pitch: PositiveMM,
+    thread_length: PositiveMM,
+    profile_dia: Optional[PositiveMM] = None,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Cut a true helical thread groove (swept cut along an InsertHelix curve, circular profile) on the active part."""
+    return _call_connected(
+        lambda sw: cut_real_thread(sw, diameter, pitch, thread_length, profile_dia),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Create linear hole row", annotations=DESTRUCTIVE, structured_output=True)
+def solidworks_part_create_linear_holes(
+    diameter: PositiveMM,
+    x: FiniteMM,
+    y: FiniteMM,
+    plane: NonEmptyString = "top",
+    count: Annotated[int, Field(ge=1, le=200)] = 2,
+    spacing: PositiveMM = 10.0,
+    direction: Literal["x", "y"] = "x",
+    depth: Optional[PositiveMM] = None,
+    through_all: bool = True,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Cut a linear row of round holes (non-native rebuilt primitives, not parametric-linked; native pattern API blocked on SW 2026)."""
+    return _call_connected(
+        lambda sw: create_linear_holes(
+            sw, diameter, x, y, plane, count, spacing, direction, depth, through_all
+        ),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Mirror feature about plane", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_features_mirror(
+    feature_name: NonEmptyString,
+    plane: Literal["right", "front", "top"] = "right",
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Mirror a body feature about a datum plane (right/front/top) for cut-symmetric geometry."""
+    return _call_connected(
+        lambda sw: mirror_feature(sw, feature_name, plane),
+        launch_if_needed,
+    )
+
+
+@mcp.tool(title="Apply draft", annotations=STATE_CHANGE, structured_output=True)
+def solidworks_features_apply_draft(
+    draft_face: NonEmptyString,
+    neutral_face: NonEmptyString,
+    angle_deg: FiniteAngle = 3.0,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Taper a named face by angle_deg using a second named face as the neutral plane (use list_faces to get names)."""
+    return _call_connected(
+        lambda sw: apply_draft(sw, draft_face, neutral_face, angle_deg),
         launch_if_needed,
     )
 

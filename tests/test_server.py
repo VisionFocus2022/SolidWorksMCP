@@ -19,7 +19,7 @@ class TestServerRegistration(unittest.TestCase):
         tools = mcp._tool_manager.list_tools()
         resources = mcp._resource_manager.list_resources()
         prompts = mcp._prompt_manager.list_prompts()
-        self.assertEqual(len(tools), 63)
+        self.assertEqual(len(tools), 67)
         self.assertEqual(len(resources), 3)
         self.assertEqual(len(prompts), 5)
 
@@ -34,6 +34,17 @@ class TestServerRegistration(unittest.TestCase):
         threaded = mcp._tool_manager.get_tool("solidworks_part_cut_threaded_hole")
         self.assertIsNotNone(threaded)
         self.assertIn("spec", threaded.parameters["properties"])
+
+    def test_n9_unlocked_tools_are_registered(self):
+        mirror = mcp._tool_manager.get_tool("solidworks_features_mirror")
+        draft = mcp._tool_manager.get_tool("solidworks_features_apply_draft")
+        thread = mcp._tool_manager.get_tool("solidworks_part_cut_real_thread")
+        holes = mcp._tool_manager.get_tool("solidworks_part_create_linear_holes")
+        for tool in (mirror, draft, thread, holes):
+            self.assertIsNotNone(tool)
+        self.assertIn("neutral_face", draft.parameters["properties"])
+        self.assertIn("profile_dia", thread.parameters["properties"])
+        self.assertIn("count", holes.parameters["properties"])
 
     def test_handshake_version_matches_package(self):
         self.assertEqual(mcp._mcp_server.version, __version__)

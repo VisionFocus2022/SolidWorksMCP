@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Dict, List, Optional
 
 import pythoncom
@@ -331,3 +332,312 @@ def delete_feature(sw_app: SolidWorksApp, feature_name: str) -> dict:
 
 def _feature_count(model: Any) -> int:
     return sum(1 for _feat in walk_features(model))
+
+
+# ---------------------------------------------------------------------------
+# N9 unlocked tools (probe: tools/probe_part/probe_n9_unblock.py, 2026-08-30)
+# ---------------------------------------------------------------------------
+
+_MIRROR_PLANES = {
+    "right": "右视基准面",
+    "front": "前视基准面",
+    "top": "上视基准面",
+}
+
+
+def _typed_fm(model: Any) -> Any:
+    """Wrap FeatureManager in its makepy class when possible.
+
+    Long parameter lists (InsertMultiFaceDraft/InsertCutSwept5) marshal
+    unreliably through dynamic dispatch; the typed wrapper fixes that
+    (N8/N9 probes). Falls back to the dynamic object off-machine or when
+    gencache has no module.
+    """
+    fm = call_or_value(model, "FeatureManager")
+    try:
+        from win32com.client import gencache
+
+        mods = gencache.GetModuleForProgID("SldWorks.Application")
+        raw = getattr(fm, "_oleobj_", None)
+        if mods is not None and raw is not None:
+            return mods.IFeatureManager(raw)
+    except Exception:  # pragma: no cover - depends on host COM registry
+        pass
+    return fm
+
+
+def _find_face_by_name(model: Any, face_name: str) -> Optional[Any]:
+    """Find a solid face by its entity name (see topology.list_faces)."""
+    for body in model.GetBodies2(0, False) or ():
+        face = call_or_value(body, "GetFirstFace")
+        while face is not None:
+            if model.GetEntityName(face) == face_name:
+                return face
+            face = call_or_value(face, "GetNextFace")
+    return None
+
+
+def _find_face_by_role(model: Any, role: str) -> Optional[Any]:
+    """Find a face by geometric role from its GetBox (metres, property).
+
+    Roles: ``top`` (z-thin at max z), ``bottom`` (z-thin at min z),
+    ``yplus`` (y-thin at max y).
+    """
+    for body in model.GetBodies2(0, False) or ():
+        face = call_or_value(body, "GetFirstFace")
+        while face is not None:
+            box = call_or_value(face, "GetBox")
+            dz = box[5] - box[2]
+            dy = box[4] - box[1]
+            hit = (
+                role == "top" and dz < 1e-6 and box[5] > 0.0195
+            ) or (
+                role == "bottom" and dz < 1e-6 and box[2] < 0.005
+            ) or (
+                role == "yplus" and dy < 1e-6 and box[4] > 0.0195
+            )
+            if hit:
+                return face
+            face = call_or_value(face, "GetNextFace")
+    return None
+
+
+def mirror_feature(
+    sw_app: SolidWorksApp,
+    feature_name: str,
+    plane: str = "right",
+) -> dict:
+    """Mirror a feature across a base plane (native InsertMirrorFeature2).
+
+    Unlock note (N9): the 5th parameter ``ScopeOptions=0`` plus the plane
+    selected with mark 2 is what makes this work on SW 2026 — the 4-arg
+    form never produced a feature (T8 evidence).
+    """
+    try:
+        if not feature_name:
+            return error_response(
+                "feature_name must be non-empty", code="INVALID_PARAMETER"
+            )
+        plane_cn = _MIRROR_PLANES.get((plane or "").lower())
+        if plane_cn is None:
+            return error_response(
+                f"plane must be one of {sorted(_MIRROR_PLANES)}",
+                code="INVALID_PARAMETER",
+            )
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+        if _find_feature(model, feature_name) is None:
+            return error_response(f"Feature not found: {feature_name}")
+
+        model.ClearSelection2(True)
+        picked = model.Extension.SelectByID2(
+            feature_name, "BODYFEATURE", 0, 0, 0, False, 1,
+            pythoncom.Nothing, 0,
+        )
+        if not picked:
+            return error_response(
+                f"SolidWorks refused to select feature '{feature_name}'",
+                code="SW_API_ERROR",
+            )
+        picked_plane = model.Extension.SelectByID2(
+            plane_cn, "PLANE", 0, 0, 0, True, 2, pythoncom.Nothing, 0,
+        )
+        if not picked_plane:
+            return error_response(
+                f"SolidWorks refused to select plane '{plane_cn}'",
+                code="SW_API_ERROR",
+            )
+
+        fm = call_or_value(model, "FeatureManager")
+        feat = fm.InsertMirrorFeature2(False, True, True, False, 0)
+        name = call_or_value(feat, "Name") if feat is not None else None
+        if feat is None or not name:
+            return error_response(
+                "SolidWorks rejected the mirror (no feature created)",
+                code="SW_API_ERROR",
+            )
+        return success_response(
+            data={"mirrored": feature_name, "plane": plane, "feature": name},
+            message=f"Mirrored '{feature_name}' across {plane} plane",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to mirror feature")
+        return error_response(f"Failed to mirror feature: {exc}")
+
+
+def apply_draft(
+    sw_app: SolidWorksApp,
+    draft_face: str,
+    neutral_face: str,
+    angle_deg: float,
+) -> dict:
+    """Apply a feature-level draft (native InsertMultiFaceDraft).
+
+    Unlock notes (N9): the draft face must be selected FIRST with mark 1
+    and the neutral plane SECOND with mark 2, and the call must go through
+    the typed FeatureManager — dynamic dispatch marshals the call into a
+    silent no-op. SW propagates the taper to the whole tangent side-face
+    chain (real-machine evidence: all four box sides change area), so the
+    result is a full-perimeter draft, not a single-face taper.
+    """
+    try:
+        if not draft_face or not neutral_face:
+            return error_response(
+                "draft_face and neutral_face must be non-empty",
+                code="INVALID_PARAMETER",
+            )
+        angle_deg = positive_number("angle_deg", angle_deg)
+
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+
+        draft = _find_face_by_name(model, draft_face)
+        if draft is None:
+            return error_response(f"Face not found: {draft_face}")
+        neutral = _find_face_by_name(model, neutral_face)
+        if neutral is None:
+            return error_response(f"Face not found: {neutral_face}")
+
+        model.ClearSelection2(True)
+        if not draft.Select2(False, 1):
+            return error_response(
+                f"SolidWorks refused to select draft face '{draft_face}'",
+                code="SW_API_ERROR",
+            )
+        if not neutral.Select2(True, 2):
+            return error_response(
+                f"SolidWorks refused to select neutral face '{neutral_face}'",
+                code="SW_API_ERROR",
+            )
+
+        fm = _typed_fm(model)
+        feat = fm.InsertMultiFaceDraft(
+            math.radians(angle_deg), False, False, 0, False, False,
+        )
+        name = call_or_value(feat, "Name") if feat is not None else None
+        if feat is None or not name:
+            return error_response(
+                "SolidWorks rejected the draft (no feature created)",
+                code="SW_API_ERROR",
+            )
+        return success_response(
+            data={
+                "draft_face": draft_face,
+                "neutral_face": neutral_face,
+                "angle_deg": angle_deg,
+                "feature": name,
+            },
+            message=f"Applied {angle_deg} deg draft on '{draft_face}'",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to apply draft")
+        return error_response(f"Failed to apply draft: {exc}")
+
+
+def cut_real_thread(
+    sw_app: SolidWorksApp,
+    diameter: float,
+    pitch: float,
+    thread_length: float,
+    profile_dia: Optional[float] = None,
+) -> dict:
+    """Cut a real helical thread groove on the active cylindrical part.
+
+    Builds the helix from a top-face circle at ``diameter`` and sweeps a
+    circular profile along it — real geometry, not a cosmetic callout.
+    Unlock notes (N9): the helix must be selected as REFERENCECURVES with
+    mark 4 (the sweep-path mark) and InsertCutSwept5 must run with
+    Alignment=False on the typed FeatureManager — with Alignment=True
+    SolidWorks silently rejects 3D curve paths.
+    """
+    try:
+        diameter = positive_number("diameter", diameter)
+        pitch = positive_number("pitch", pitch)
+        thread_length = positive_number("thread_length", thread_length)
+        if profile_dia is None:
+            # Default groove depth 0.6*pitch matches a 60-degree thread form;
+            # cap at 3mm so coarse pitches cannot swallow thin walls.
+            profile_dia = min(3.0, 1.2 * pitch)
+        profile_dia = positive_number("profile_dia", profile_dia)
+
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+
+        top = _find_face_by_role(model, "top")
+        if top is None or not top.Select2(False, 0):
+            return error_response(
+                "No top face found on active part", code="SW_API_ERROR"
+            )
+
+        sm = model.SketchManager
+        sm.InsertSketch(True)
+        sm.CreateCircleByRadius(0, 0, 0, mm_to_m(diameter / 2.0))
+        sm.InsertSketch(True)
+        revolutions = thread_length / pitch
+        model.InsertHelix(
+            False, False, False, False, 0, 0.0,
+            mm_to_m(pitch), revolutions, 0.0, 0.0,
+        )
+        helix_name = next(
+            (name for name in (f.Name for f in walk_features(model))
+             if "螺旋线" in name),
+            None,
+        )
+        if helix_name is None:
+            return error_response(
+                "Helix was not created", code="SW_API_ERROR"
+            )
+
+        model.ClearSelection2(True)
+        picked = model.Extension.SelectByID2(
+            helix_name, "REFERENCECURVES", 0, 0, 0, False, 4,
+            pythoncom.Nothing, 0,
+        )
+        if not picked:
+            return error_response(
+                "SolidWorks refused to select the helix", code="SW_API_ERROR"
+            )
+
+        fm = _typed_fm(model)
+        feat = fm.InsertCutSwept5(
+            False, False, 0, False, False, 0, 0,
+            False, 0.0, 0.0, 0,
+            0, True, True, 0.0, True, False, False, False,
+            True, mm_to_m(profile_dia), 0,
+        )
+        name = call_or_value(feat, "Name") if feat is not None else None
+        if feat is None or not name:
+            return error_response(
+                "SolidWorks rejected the thread sweep",
+                code="SW_API_ERROR",
+            )
+        return success_response(
+            data={
+                "diameter": diameter,
+                "pitch": pitch,
+                "thread_length": thread_length,
+                "revolutions": revolutions,
+                "profile_dia": profile_dia,
+                "feature": name,
+            },
+            message=(
+                f"Cut real thread: pitch {pitch}mm x {revolutions:.2f} rev "
+                f"on ⌀{diameter}mm"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to cut real thread")
+        return error_response(f"Failed to cut real thread: {exc}")
