@@ -375,6 +375,60 @@ class TestComponentPreopen(unittest.TestCase):
             2,
         )
 
+    @patch("solidworks_mcp.solidworks_api.assembly._get_or_create_assembly")
+    @patch("solidworks_mcp.solidworks_api.assembly.validate_extension",
+           return_value=(True, ""))
+    @patch("solidworks_mcp.solidworks_api.assembly.validate_path",
+           return_value=(True, ""))
+    def test_closes_preopen_when_add_fails(self, _path, _ext, get_asm):
+        # N10：AddComponent4 失败时预开文档无引用持有 → 必须关闭防滞留。
+        # 实机证据（probe_n10_asmclose）：一旦插入成功，装配体持有文档，
+        # CloseDoc 被静默忽略；只有失败路径的关闭是可行的。
+        model = Mock()
+        model.AddComponent4.return_value = None
+        get_asm.return_value = model
+        sw = Mock()
+        sw.app.OpenDoc6.return_value = "opened"
+        sw.app.GetOpenDocumentByName.return_value = None
+        result = add_component(sw, "part.sldprt")
+        self.assertFalse(result["success"])
+        sw.app.CloseDoc.assert_called_once_with("part.sldprt")
+
+    @patch("solidworks_mcp.solidworks_api.assembly._get_or_create_assembly")
+    @patch("solidworks_mcp.solidworks_api.assembly.validate_extension",
+           return_value=(True, ""))
+    @patch("solidworks_mcp.solidworks_api.assembly.validate_path",
+           return_value=(True, ""))
+    def test_keeps_part_open_after_successful_add(self, _path, _ext, get_asm):
+        # 成功插入后装配体持有零件文档（SW 装配语义，CloseDoc 静默无效，
+        # 实机 count 3→3 证据）→ 不得调用 CloseDoc（调了也无效果且冗余）
+        model = Mock()
+        model.AddComponent4.return_value = SimpleNamespace(Name2="P-1")
+        get_asm.return_value = model
+        sw = Mock()
+        sw.app.OpenDoc6.return_value = "opened"
+        sw.app.GetOpenDocumentByName.return_value = None
+        result = add_component(sw, "part.sldprt")
+        self.assertTrue(result["success"])
+        sw.app.CloseDoc.assert_not_called()
+
+    @patch("solidworks_mcp.solidworks_api.assembly._get_or_create_assembly")
+    @patch("solidworks_mcp.solidworks_api.assembly.validate_extension",
+           return_value=(True, ""))
+    @patch("solidworks_mcp.solidworks_api.assembly.validate_path",
+           return_value=(True, ""))
+    def test_keeps_user_opened_part_document(self, _path, _ext, get_asm):
+        # 文档是用户先前打开的（非本次预开）→ 即使添加失败也不得关闭
+        model = Mock()
+        model.AddComponent4.return_value = None
+        get_asm.return_value = model
+        sw = Mock()
+        sw.app.OpenDoc6.return_value = "opened"
+        sw.app.GetOpenDocumentByName.return_value = Mock()
+        result = add_component(sw, "part.sldprt")
+        self.assertFalse(result["success"])
+        sw.app.CloseDoc.assert_not_called()
+
 
 class TestMateExtension(unittest.TestCase):
     def test_constants_match_swconst_values(self):

@@ -152,6 +152,39 @@ def _preopen_component_document(sw_app: SolidWorksApp, file_path: str) -> Option
     return None
 
 
+def _document_is_open(sw_app: SolidWorksApp, file_path: str) -> bool:
+    """Return True when the document is already open in the SW session.
+
+    Uses ``GetOpenDocumentByName`` (NOT the ...Name2 variant): the makepy
+    typed wrapper shipped with real SW sessions has no ``...Name2`` method
+    (N10 probe evidence), and matching is by FULL PATH only — the document
+    title ("comp0.SLDPRT") does not match.
+    """
+    try:
+        return sw_app.app.GetOpenDocumentByName(file_path) is not None
+    except Exception:
+        return False
+
+
+def _close_preopened_component(sw_app: SolidWorksApp, file_path: str) -> None:
+    """Close a document this tool pre-opened for AddComponent4 (best-effort).
+
+    Only meaningful on the FAILED-insert path: once an assembly references
+    the part, CloseDoc is silently ignored (SW holds the document until the
+    assembly closes — N10 probe_n10_asmclose evidence: count 3→3, doc still
+    queryable). With no reference, CloseDoc(full path) works (probe #1).
+    Never raises: a failed close must not mask the add failure.
+    """
+    try:
+        sw_app.app.CloseDoc(file_path)
+    except Exception:
+        logger.debug(
+            "Failed to close pre-opened component document: %s",
+            file_path,
+            exc_info=True,
+        )
+
+
 def add_component(
     sw_app: SolidWorksApp,
     file_path: str,
@@ -172,6 +205,7 @@ def add_component(
         x = finite_number("x", x)
         y = finite_number("y", y)
         z = finite_number("z", z)
+        was_open = _document_is_open(sw_app, file_path)
         preopen_error = _preopen_component_document(sw_app, file_path)
         if preopen_error:
             return error_response(preopen_error, code="SW_API_ERROR")
@@ -179,6 +213,13 @@ def add_component(
         # AddComponent4(path, configName, x, y, z)
         component = model.AddComponent4(file_path, config_name, x / 1000.0, y / 1000.0, z / 1000.0)
         if component is None:
+            # Failed insert: nothing references the pre-opened document yet,
+            # so close it or it lingers in the session forever (N10 fix —
+            # real-machine rule: after a SUCCESSFUL insert the assembly holds
+            # the document and CloseDoc is silently ignored; on failure there
+            # is no reference and CloseDoc(full path) works).
+            if not was_open:
+                _close_preopened_component(sw_app, file_path)
             return error_response(f"Failed to add component: {file_path}")
 
         return success_response(

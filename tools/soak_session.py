@@ -1,13 +1,19 @@
-"""T22-1: 主包长会话 soak——100 轮「create_box → export_step → close」。
+"""T22-1: 主包长会话 soak——「create_box → export_step → close」及其扩展负载。
 
-用法：venv\\Scripts\\python.exe -X utf8 tools\\soak_session.py
+用法：venv\\Scripts\\python.exe -X utf8 tools\\soak_session.py [--tool-filter F] [--rounds N]
+  --tool-filter box-only   基线：box → export_step → close（T22 原链）
+  --tool-filter +faces     加 topology.list_faces/list_bodies 面遍历
+  --tool-filter +drawing   加 drawing 建图 → PDF 导出 → 全量关闭
+  --tool-filter +assembly  加装配 new → add_component×2（预开嫌疑点）→ 全量关闭
 前置：SolidWorks 已启动。产物：output/soak-report-<时间戳>.json。
 判定：SW 进程工作集全程增幅 < 100MB 视为平稳（CloseDoc 无句柄泄漏的
 必要证据；超过则记录证据并把 F4 升级为缺陷任务，不在本脚本内修）。
+N10 二分定位：四组各 50 轮同会话顺序跑，组内增量即该负载贡献。
 """
 
 from __future__ import annotations
 
+import argparse
 import ctypes
 import json
 import subprocess
@@ -77,33 +83,113 @@ def _rss_mb(pid: int) -> float | None:
         kernel32.CloseHandle(handle)
 
 
+def _close_all(sw) -> dict:
+    try:
+        sw.app.CloseAllDocuments(True)
+        return {"success": True}
+    except Exception as exc:
+        return {"success": False, "message": repr(exc)[:120]}
+
+
+def _round_box(sw) -> list:
+    box = part.create_box(
+        sw, 60.0, 40.0, 20.0, str(WORK_DIR / "soak_box.SLDPRT"), True
+    )
+    exported = file_io.export_step(sw, str(WORK_DIR / "soak_box.step"), True)
+    closed = file_io.close_document(sw, False)
+    return [box, exported, closed]
+
+
+def _round_faces(sw) -> list:
+    from solidworks_mcp.solidworks_api import topology
+
+    box = part.create_box(
+        sw, 60.0, 40.0, 20.0, str(WORK_DIR / "soak_box.SLDPRT"), True
+    )
+    faces = topology.list_faces(sw)
+    bodies = topology.list_bodies(sw)
+    closed = file_io.close_document(sw, False)
+    return [box, faces, bodies, closed]
+
+
+def _round_drawing(sw) -> list:
+    from solidworks_mcp.solidworks_api import drawing as drawing_api
+
+    box = part.create_box(
+        sw, 60.0, 40.0, 20.0, str(WORK_DIR / "soak_box.SLDPRT"), True
+    )
+    # 盒子已保存：建图会隐式重开引用零件，收尾必须全量关闭
+    closed_part = file_io.close_document(sw, False)
+    drawn = drawing_api.create_drawing_from_part(
+        sw, str(WORK_DIR / "soak_box.SLDPRT")
+    )
+    pdf = drawing_api.export_drawing_pdf(
+        sw, str(WORK_DIR / "soak_box_drawing.pdf"), True
+    )
+    closed = _close_all(sw)
+    return [box, closed_part, drawn, pdf, closed]
+
+
+def _round_assembly(sw) -> list:
+    from solidworks_mcp.solidworks_api import assembly as asm_api
+
+    box = part.create_box(
+        sw, 60.0, 40.0, 20.0, str(WORK_DIR / "soak_box.SLDPRT"), True
+    )
+    closed_part = file_io.close_document(sw, False)
+    created = asm_api.new_assembly(
+        sw, str(WORK_DIR / "soak_asm.SLDASM"), True
+    )
+    # add_component 内部预开零件文档（N10 嫌疑点）：每轮两组件叠加
+    added1 = asm_api.add_component(sw, str(WORK_DIR / "soak_box.SLDPRT"), 0, 0, 0)
+    added2 = asm_api.add_component(sw, str(WORK_DIR / "soak_box.SLDPRT"), 100, 0, 0)
+    closed = _close_all(sw)
+    return [box, closed_part, created, added1, added2, closed]
+
+
+LOADOUTS = {
+    "box-only": _round_box,
+    "+faces": _round_faces,
+    "+drawing": _round_drawing,
+    "+assembly": _round_assembly,
+}
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--tool-filter", choices=sorted(LOADOUTS), default="box-only",
+        help="负载分组（N10 二分定位；默认 box-only=T22 原链）",
+    )
+    parser.add_argument(
+        "--rounds", type=int, default=ROUNDS,
+        help=f"轮数（默认 {ROUNDS}；分组定位用 50）",
+    )
+    args = parser.parse_args()
+    tool_filter = args.tool_filter
+    rounds = max(1, args.rounds)
+    loadout = LOADOUTS[tool_filter]
+
     sw = get_solidworks_app()
     if not sw.connect(launch_if_needed=False)["success"]:
         print("SolidWorks 未运行，退出码 2")
         return 2
     pid = _find_sldworks_pid()
-    print(f"SLDWORKS pid = {pid}")
+    print(f"SLDWORKS pid = {pid}  filter={tool_filter} rounds={rounds}")
     WORK_DIR.mkdir(parents=True, exist_ok=True)
 
     samples = []
     t_start = time.perf_counter()
     failures = 0
-    for round_no in range(1, ROUNDS + 1):
+    for round_no in range(1, rounds + 1):
         t0 = time.perf_counter()
-        box = part.create_box(
-            sw, 60.0, 40.0, 20.0, str(WORK_DIR / "soak_box.SLDPRT"), True
-        )
-        exported = file_io.export_step(
-            sw, str(WORK_DIR / "soak_box.step"), True
-        )
-        closed = file_io.close_document(sw, False)
-        ok = box.get("success") and exported.get("success") and closed.get("success")
+        results = loadout(sw)
+        ok = all(r.get("success") for r in results)
         if not ok:
             failures += 1
-            print(f"[{round_no:3}] FAIL box={box.get('message')!r:.80} "
-                  f"export={exported.get('message')!r:.80} "
-                  f"close={closed.get('message')!r:.80}")
+            print(f"[{round_no:3}] FAIL " + " ".join(
+                repr(r.get("message"))[:60] for r in results if not r.get("success")
+            ))
         if round_no % SAMPLE_EVERY == 0 or round_no == 1:
             rss = _rss_mb(pid) if pid else None
             elapsed = round(time.perf_counter() - t_start, 1)
@@ -122,9 +208,11 @@ def main() -> int:
 
     report = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "rounds": ROUNDS, "failures": failures, "total_s": total_s,
+        "tool_filter": tool_filter,
+        "rounds": rounds, "failures": failures, "total_s": total_s,
         "sw_pid": pid, "samples": samples,
         "sw_rss_growth_mb": growth,
+        "sw_rss_first_mb": first and first["sw_rss_mb"],
         "stable": stable,
         "verdict": (
             "stable" if stable else

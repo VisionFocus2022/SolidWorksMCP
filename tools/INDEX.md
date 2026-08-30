@@ -56,5 +56,6 @@
 
 | 脚本 | 用途 |
 |---|---|
-| e2e_sw_smoke.py | 全工具实机冒烟（T1 建立，每任务追加；62 步） |
+| e2e_sw_smoke.py | 全工具实机冒烟（T1 建立，每任务追加；99 步） |
+| soak_session.py | 长会话 soak（T22 建立）；N10 加 --tool-filter 四组二分（box-only/+faces/+drawing/+assembly）与 --rounds；四组×50 轮实测：box 0.90、faces 0.67、drawing 2.78、assembly 3.17 MB/轮；add_component 预开滞留与 SW 装配语义持有详见 assembly.py N10 注释 |
 | run_pytest_guarded.py / run_suite_traced.py | 测试运行器（守卫/追踪） |

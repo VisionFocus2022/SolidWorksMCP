@@ -532,24 +532,32 @@ def execute_design_plan(
     applied: List[int] = []
     for index, operation in enumerate(operations, start=1):
         try:
+            op_type = (
+                str(operation.get("type", "")).lower()
+                if isinstance(operation, dict)
+                else ""
+            )
             if not isinstance(operation, dict):
-                return error_response(
+                # N10: parameter errors flow through the unified failure
+                # path below so atomic rollback (and shell close) still runs —
+                # a bare return here used to leak the op-1 shell document.
+                result = error_response(
                     f"Operation {index} must be an object",
                     code="INVALID_PARAMETER",
                 )
-            op_type = str(operation.get("type", "")).lower()
-            if op_type in {"box", "block", "plate"}:
+            elif op_type in {"box", "block", "plate"}:
                 thickness = operation.get("thickness", operation.get("height"))
                 if thickness is None:
-                    return error_response(
+                    result = error_response(
                         f"Operation {index} requires thickness or height"
                     )
-                result = create_plate(
-                    sw_app,
-                    float(operation["width"]),
-                    float(operation["depth"]),
-                    float(thickness),
-                )
+                else:
+                    result = create_plate(
+                        sw_app,
+                        float(operation["width"]),
+                        float(operation["depth"]),
+                        float(thickness),
+                    )
             elif op_type == "cylinder":
                 result = create_cylinder(
                     sw_app,
@@ -602,39 +610,40 @@ def execute_design_plan(
 
                 rings = operation.get("rings")
                 if not isinstance(rings, list) or not rings:
-                    return error_response(
+                    result = error_response(
                         f"Operation {index} requires a non-empty 'rings' list",
                         code="INVALID_PARAMETER",
                     )
-                result = create_annular_pattern(
-                    sw_app,
-                    rings,
-                    plane=str(operation.get("plane", "top")),
-                    feature_kind=str(operation.get("feature_kind", "cut")),
-                    depth=(
-                        None
-                        if operation.get("depth") is None
-                        else float(operation.get("depth"))
-                    ),
-                    through_all=parse_bool(
-                        "through_all", operation.get("through_all", True)
-                    ),
-                    avoid_angles_degrees=operation.get("avoid_angles_degrees"),
-                )
+                else:
+                    result = create_annular_pattern(
+                        sw_app,
+                        rings,
+                        plane=str(operation.get("plane", "top")),
+                        feature_kind=str(operation.get("feature_kind", "cut")),
+                        depth=(
+                            None
+                            if operation.get("depth") is None
+                            else float(operation.get("depth"))
+                        ),
+                        through_all=parse_bool(
+                            "through_all", operation.get("through_all", True)
+                        ),
+                        avoid_angles_degrees=operation.get("avoid_angles_degrees"),
+                    )
             elif op_type == "new_part":
                 result = create_new_part(sw_app)
             else:
-                return error_response(
+                result = error_response(
                     f"Unsupported operation at index {index}: {op_type}. "
                     f"Supported types: {', '.join(DESIGN_PLAN_OPERATIONS)}."
                 )
         except KeyError as exc:
-            return error_response(
+            result = error_response(
                 f"Operation {index} is missing required key: {exc}",
                 code="INVALID_PARAMETER",
             )
         except (TypeError, ValueError) as exc:
-            return error_response(
+            result = error_response(
                 f"Operation {index} has invalid parameter values: {exc}",
                 code="INVALID_PARAMETER",
             )
@@ -652,9 +661,20 @@ def execute_design_plan(
                 data["rolled_back"] = rolled_back
                 if warning:
                     data["rollback_warning"] = warning
+                if initial_model is None:
+                    # N10: the document was implicitly created by the plan
+                    # itself; closing it discards any rollback leftovers in
+                    # one shot. Real-machine note (probe_n10_shell): a fresh
+                    # SW document's tree already holds ~17 inherent folder
+                    # nodes (收藏/注解/基准面…) rollback can never delete,
+                    # so a warning-free shell rollback is impossible — the
+                    # close must not depend on the warning being absent.
+                    data["shell_closed"] = _close_plan_created_shell(sw_app)
+            stopped_code = (result.get("error") or {}).get("code")
             return error_response(
                 f"Design plan stopped at operation {index}: {result.get('message')}",
                 data=data,
+                code=stopped_code,
             )
         applied.append(index)
 
@@ -668,6 +688,29 @@ def execute_design_plan(
         data={"operations": results, "saved_to": save_path},
         message=f"Executed {len(operations)} design operations",
     )
+
+
+def _close_plan_created_shell(sw_app: SolidWorksApp) -> bool:
+    """Close the empty shell document implicitly created by the plan.
+
+    N10 leak fix: ``new_part`` opens a blank document; when an atomic plan
+    rolls back to empty, that blank shell would linger in the SW session
+    forever. Only called when rollback completed without a warning and the
+    plan started with no active document. Best-effort: failures return
+    False, never raise.
+    """
+    try:
+        model = sw_app.get_active_document()
+        if model is None:
+            return False
+        title = call_or_value(model, "GetTitle")
+        if not isinstance(title, str) or not title.strip():
+            return False
+        sw_app.app.CloseDoc(title)
+        return True
+    except Exception:
+        logger.debug("Failed to close plan-created shell document", exc_info=True)
+        return False
 
 
 def _snapshot_feature_names(model: Optional[Any]) -> set:
@@ -684,6 +727,13 @@ def _cap_names(names: List[str]) -> List[str]:
     if len(names) > _ROLLBACK_LIST_CAP:
         return names[:_ROLLBACK_LIST_CAP] + [f"…and {len(names) - _ROLLBACK_LIST_CAP} more"]
     return names
+
+
+# Inherent features every new SW document ships with (N10 probe_n10_shell
+# evidence): not plan-created, not deletable (EditDelete silently fails on
+# them yet SelectByID2 still picks them — a deleted-list false positive).
+# Excluded so a plan that starts from no document can roll back to "empty".
+_INHERENT_FEATURE_NAMES = {"原点", "Origin"}
 
 
 def _delete_new_features(
@@ -704,7 +754,11 @@ def _delete_new_features(
         model = sw_app.get_active_document()
         if model is None:
             return deleted, None
-        new_names = [n for n in walk_feature_names(model) if n not in before]
+        new_names = [
+            n
+            for n in walk_feature_names(model)
+            if n not in before and n not in _INHERENT_FEATURE_NAMES
+        ]
         for name in reversed(new_names):
             picked = False
             for type_string in ("BODYFEATURE", "SKETCH"):
@@ -718,7 +772,11 @@ def _delete_new_features(
                 continue
             call_or_value(model, "EditDelete")
             deleted.append(name)
-        remaining = [n for n in walk_feature_names(model) if n not in before]
+        remaining = [
+            n
+            for n in walk_feature_names(model)
+            if n not in before and n not in _INHERENT_FEATURE_NAMES
+        ]
         warning = (
             "rollback incomplete, "
             f"{len(remaining)} feature(s) left in tree: {_cap_names(remaining)}"

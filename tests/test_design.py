@@ -359,6 +359,19 @@ class RollbackSolidWorks(FakeSolidWorks):
         return self.model
 
 
+class ShellSolidWorks(FakeSolidWorks):
+    """N10/F4 fixture: no active document before the plan; the plan's
+    first operation creates one (tracked in ``docs``)."""
+
+    def __init__(self, model):
+        self.docs = []
+        self._model = model
+        self.app = Mock()
+
+    def get_active_document(self):
+        return self.docs[-1] if self.docs else None
+
+
 class TestDesignPlanAtomic(unittest.TestCase):
     @patch("solidworks_mcp.solidworks_api.design.create_new_part")
     @patch("solidworks_mcp.solidworks_api.design.cut_round_hole")
@@ -442,6 +455,54 @@ class TestDesignPlanAtomic(unittest.TestCase):
         self.assertIn("rollback", warning)
         self.assertIn("删不掉的特征", warning)
         self.assertEqual(result["data"]["rolled_back"], [])
+
+    @patch("solidworks_mcp.solidworks_api.design.create_new_part")
+    @patch("solidworks_mcp.solidworks_api.design.cut_round_hole")
+    def test_rollback_closes_shell_created_by_plan(
+        self, cut_round_hole, create_new_part
+    ):
+        # F4/N10：计划开始前无文档（计划隐式新建）→ 回滚完整后关闭空壳文档
+        model = RollbackModel()
+        model.GetTitle = "空壳零件1"
+        sw = ShellSolidWorks(model)
+        create_new_part.side_effect = lambda *a, **k: (
+            sw.docs.append(model),
+            success_response({}, "new"),
+        )[1]
+        cut_round_hole.return_value = error_response("boom", code="SW_API_ERROR")
+
+        result = execute_design_plan(
+            sw,
+            [
+                {"type": "new_part"},
+                {"type": "hole", "diameter": 8, "depth": 5},
+            ],
+        )
+
+        self.assertFalse(result["success"])
+        sw.app.CloseDoc.assert_called_once_with("空壳零件1")
+        self.assertTrue(result["data"].get("shell_closed"))
+
+    @patch("solidworks_mcp.solidworks_api.design.create_new_part")
+    @patch("solidworks_mcp.solidworks_api.design.cut_round_hole")
+    def test_rollback_keeps_preexisting_document(
+        self, cut_round_hole, create_new_part
+    ):
+        # 计划开始前已有活动文档（用户上下文）→ 回滚后绝不关闭
+        model = RollbackModel()
+        model.GetTitle = "用户零件1"
+        sw = ShellSolidWorks(model)
+        sw.docs.append(model)  # initial = model 非 None
+        cut_round_hole.return_value = error_response("boom", code="SW_API_ERROR")
+
+        result = execute_design_plan(
+            sw,
+            [{"type": "hole", "diameter": 8, "depth": 5}],
+        )
+
+        self.assertFalse(result["success"])
+        sw.app.CloseDoc.assert_not_called()
+        self.assertNotIn("shell_closed", result["data"])
 
 
 class TestWalkFeatureNamesHardening(unittest.TestCase):
