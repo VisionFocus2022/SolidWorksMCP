@@ -41,6 +41,7 @@
 | 脚本 | 验证对象 | 有效结论 | 任务 |
 |---|---|---|---|
 | probe_material_props_eqs.py | 材料/自定义属性/方程式/配置 | byref VARIANT(VT_BSTR) 铁律；材料名必须中文；Add3/Add2/AddConfiguration 返回形态 | T17 |
+| probe_equation_cfg_edit.py | 方程式删改/配置激活/按配置设尺寸 | EquationMgr 动态代理 propput 带参不可用→以强类型 gencache 形态为准（Delete(i)/SetEquation(i,text)）；配置激活 ShowConfiguration2 | N12 |
 
 ## validate/ — 验证与巡检脚本
 
@@ -51,6 +52,8 @@
 | inspect_golden_cyls.py | 金标圆柱几何巡检 | 治理期 |
 | inspect_planar_faces.py | 平面巡检 | 治理期 |
 | inspect_step_geometry.py | STEP 几何巡检 | 治理期 |
+| csg_roundtrip.py | 跨引擎 CSG 往返（aicad build123d 基准体积 + CSG v1 契约 JSON → 主仓 rebuild_csg_plan → SW 体积互证），需 SW 实机 | N11 |
+| triple_artifact.py | 验收清单 #5 三件套（HLR views.svg + .sldprt + .step 同脚本双引擎产出），需 SW 实机 | N11 |
 
 ## 根目录
 
