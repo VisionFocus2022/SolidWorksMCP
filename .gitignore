@@ -25,7 +25,10 @@ pytest_report.xml
 .audit-backup-*/
 
 # Scratch outputs (generated CAD files, smoke artifacts)
-output/
+output/*
+# Governance docs live in output/ but must stay version-controlled (G1 backup spirit)
+!output/optimization-plan-*.md
+!output/architecture-evolution-*/
 
 # Root-level smoke/product artifacts (written to CWD by e2e runs and ring_light)
 /part.STL

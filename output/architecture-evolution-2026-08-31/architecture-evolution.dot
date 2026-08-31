@@ -1,0 +1,29 @@
+// architecture-evolution — migration slices DAG — SolidWorksMCP 2026-08-31
+// Produced by: architecture-visualization:evolution-planner (+ graphviz foundation)
+// 每片含验证信号（VS）。S0/S1 为交付可靠前置——先保住已完成的成果，再扩能力面。
+digraph EvolutionSlices {
+  rankdir=TB;
+  node [fontname="Microsoft YaHei", fontsize=11];
+  edge [fontname="Microsoft YaHei", fontsize=9];
+
+  start [label="现状：三期 17/17 + 四期 N18-N21 完成\n能力面齐，治理面闭环", shape=ellipse, style=filled, fillcolor=palegreen];
+
+  s0 [label="S0 灾备保险（用户动作，分钟级）\n主仓 push 15 提交（N8-N14+四期全部成果）\nVS: origin/main SHA == 本地 HEAD", shape=box, style=filled, fillcolor=gold];
+  s1 [label="S1 交付闭环（N22 扩容版）\naicad 远端 + CI；主仓 CI 激活路径裁决\n（GitHub 远端 or Gitee Go 迁移）\nVS: push 后 CI 绿 + 双仓远端存在", shape=box, style=filled, fillcolor=gold];
+  s2 [label="S2 质量收口\nN23 空闲机 perf 复验（禁放室断言）\n+ H2 缓存命中率报表 + CodeRabbit auth\nVS: perf 绿 or 开优化批；报表可导出", shape=box];
+  s3 [label="S3 零件能力长尾（可分波）\nloft/sweep/筋/圆顶/参考几何\n+ CSG 契约 v2 扩 op\nVS: TDD + 实机 e2e + 往返体积互证", shape=box];
+  s4 [label="S4 图纸能力长尾（与 S3 并行）\nBOM 气泡引线 + 爆炸图\n+ aicad 前端冒烟测试\nVS: e2e 产物断言 + 前端测试绿", shape=box];
+  s5 [label="S5 智能自治层（远期，按需立项）\nplan-then-execute / RAG 示例检索\nmate 约束求解器 / 多模型路由\n+ 原生 FeatureCircularPattern4 升级\nVS: 评测集任务通过率提升可量化", shape=box, style="rounded,filled", fillcolor=thistle];
+
+  start -> s0 [label="风险最高且最便宜"];
+  s0 -> s1 [label="灾备先行，CI 才有意义"];
+  s1 -> s2 [label="门禁可信后收口质量"];
+  s2 -> s3 [label="新能力需要可信基线"];
+  s2 -> s4;
+  s3 -> s5 [label="能力面喂给智能层"];
+  s4 -> s5;
+  s3 -> s4 [label="可并行（域不相交）", style=dotted, dir=none, constraint=false];
+
+  risk_note [label="警告：S0 未做之前，S3-S5 的每一行代码\n都只存在于一台机器上", shape=note, fillcolor=mistyrose, style="filled,dashed"];
+  risk_note -> s0 [style=dotted, arrowhead=none, color=firebrick];
+}

@@ -1,0 +1,54 @@
+// current-vs-target gap map — SolidWorksMCP evolution review 2026-08-31
+// Produced by: architecture-visualization:evolution-planner (+ graphviz foundation)
+// Reading order: solid cluster = current (verified today); dashed cluster = target/proposed gaps.
+// Evidence refs: see current-vs-target.evidence.md (E-NN).
+digraph CurrentVsTarget {
+  rankdir=TB;
+  node [fontname="Microsoft YaHei", fontsize=11];
+  edge [fontname="Microsoft YaHei", fontsize=9];
+
+  subgraph cluster_current {
+    label="当前态（2026-08-31 亲验，485+95 subtests 绿 / 69 工具）";
+    style=solid; color=darkgreen; penwidth=2;
+
+    sys_mcp [label="主仓 MCP 服务器\n69 工具 + 5 prompts\nregistry/ 11 域模块 + 206 行门面", shape=box, style=filled, fillcolor=palegreen];
+    com_sta [label="COM 执行件\n单 STA 线程 + 超时默认启用\n+ 毒化快速失败", shape=box, style=filled, fillcolor=palegreen];
+    sw_ext  [label="SolidWorks 2026\n（外部 COM 自动化对象）", shape=box3d, style=filled, fillcolor=lightgray];
+    aicad   [label="aicad 子仓（69 提交，无远端）\nbuild123d 沙箱池 + HLR 图纸\nDXF/OBJ/STL + 标准件族 + CSG v1", shape=box, style=filled, fillcolor=palegreen];
+    ai_loop [label="AI 建模循环\n几何反馈/token 裁剪/重试\n干涉回流（循环增强 II）", shape=box, style=filled, fillcolor=palegreen];
+    nightly [label="每日 02:30 自动实施任务\n读 optimization-plan-*.md 执行", shape=box, style=filled, fillcolor=lightskyblue];
+    gov     [label="治理面\nADR 0001-0012 + 双仓 AGENTS.md\n+ 四期计划 N1-N23 台账", shape=note, style=filled, fillcolor=khaki];
+    tests   [label="测试基线\n主仓 485+95 subtests (10s)\naicad 631（1 perf 负载敏感红）", shape=note, style=filled, fillcolor=khaki];
+
+    sys_mcp -> com_sta [label="run_com 唯一入口", style=solid];
+    com_sta -> sw_ext  [label="晚绑定 Dispatch\n（ADR-0001/0002）", style=solid];
+    aicad   -> sw_ext  [label="SW COM 直连通道\n（makepy 子集）", style=solid];
+    aicad   -> ai_loop [label="驱动", style=solid];
+    nightly -> gov     [label="总览表选任务", style=dashed];
+    tests   -> sys_mcp [label="4 处工具数断言钉死", style=dashed];
+  }
+
+  subgraph cluster_target {
+    label="目标态缺口（target/proposed——除注明外均未实施）";
+    style=dashed; color=firebrick; penwidth=2;
+
+    gap_delivery  [label="缺口 G1 交付可靠 [target, 半阻塞]\n主仓 15 提交未推送\naicad 零远端（N22）\n主仓 CI 休眠（gitee 远端 × GH Actions）", shape=octagon, style=filled, fillcolor=mistyrose];
+    gap_perf      [label="缺口 G2 perf 预算复验 [target, N23]\naicad tessellate 100k ≤0.3s\n需空闲机；禁放室断言", shape=octagon, style=filled, fillcolor=mistyrose];
+    gap_qa        [label="缺口 G3 质量观测 [proposed]\naicad 前端零测试\n缓存命中率报表（H2）\nCodeRabbit 外审未 auth", shape=octagon, style=filled, fillcolor=mistyrose];
+    gap_part      [label="缺口 G4 零件长尾 [proposed]\nloft/sweep/多实体 combine\n通用草图/参考几何/筋/圆顶", shape=octagon, style=filled, fillcolor=mistyrose];
+    gap_drawing   [label="缺口 G5 图纸长尾 [proposed]\n爆炸图 + BOM 气泡引线\n（制造级出图最后装饰面）", shape=octagon, style=filled, fillcolor=mistyrose];
+    gap_csg       [label="缺口 G6 CSG 契约 v2 [proposed]\nv1 仅 4-op；装饰/阵列/\n螺纹不可跨引擎迁移", shape=octagon, style=filled, fillcolor=mistyrose];
+    gap_native    [label="缺口 G7 原生阵列升级 [proposed]\n线性/环阵=数学重建非参数联动\nFeatureCircularPattern4 升级路径已留探针", shape=octagon, style=filled, fillcolor=mistyrose];
+    gap_ai        [label="缺口 G8 智能自治层 [proposed, 远期]\nplan-then-execute 分解\nRAG 示例检索 / mate 约束求解器\n多模型路由 / 特征级缓存", shape=octagon, style=filled, fillcolor=mistyrose];
+  }
+
+  sys_mcp -> gap_part    [label="扩展能力面", style=dashed, color=firebrick];
+  sys_mcp -> gap_native  [label="升级实现路线", style=dashed, color=firebrick];
+  sys_mcp -> gap_csg     [label="扩契约版本", style=dashed, color=firebrick];
+  sys_mcp -> gap_drawing [label="扩展图纸面", style=dashed, color=firebrick];
+  aicad   -> gap_ai      [label="自治升级", style=dashed, color=firebrick];
+  aicad   -> gap_delivery [label="N22 BLOCKED\n等用户远端", style=dashed, color=firebrick];
+  nightly -> gap_delivery [label="新发现：主仓 15 提交\n零异地灾备", style=dashed, color=firebrick];
+  tests   -> gap_perf    [label="负载敏感假红\n环境归因待证", style=dashed, color=firebrick];
+  ai_loop -> gap_qa      [label="可观测性补齐", style=dashed, color=firebrick];
+}
