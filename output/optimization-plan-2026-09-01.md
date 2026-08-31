@@ -65,9 +65,9 @@
 |---|---|---|---|---|---|---|---|
 | N24 | P1 | 主仓 CI 激活与首跑修复批（D3） | 主 | U6（原 U1+U3 远端部分已完成） | 2h/1晚 | `[!]` BLOCKED（远端接入+推送已完成 2026-08-31；CI 首跑被**账户计费挡板**拦停——等 U6 后 re-run 观测，run 33389164476 定谳非代码问题） | |
 | N25 | P1 | aicad 远端接入与 CI 绑定（承接四期 N22） | ai | 无（U2 已完成） | 1h/1晚 | `[ ]`（远端接入+69 提交首推已由 2026-08-31 会话完成；余步：untracked 脚本处置 + CI 绑定（同受 U6 计费挡）+ 双回填） | |
-| N26 | P2 | aicad perf 预算空闲机复验（承接四期 N23） | ai | 无（需空闲机） | 0.5h | `[ ]` 需空闲机 | |
+| N26 | P2 | aicad perf 预算空闲机复验（承接四期 N23） | ai | 无（需空闲机） | 0.5h | `[!]` BLOCKED（2026-08-31 复核：SW 运行中 2 进程 + CPU 78%，空闲条件不满足——需 SW 关闭、CPU<20% 窗口；另 N27 前后两轮 631/637 全套负载下 perf 均绿，假红判断进一步加固） | |
 | N27 | P2 | 缓存命中率报表导出 CSV/JSON（H2） | ai | 无 | 2h/1晚 | `[x]` 2026-08-31（b5d26f2，637 passed；偏差：测试文件名 test_stats_export_route.py） | 2026-08-31 |
-| N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
+| N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[~]` 步骤1取证✅（2026-08-31；sweep 路线锁定，loft 路线待实机收敛） | |
 | N29 | P2 | 零件长尾波2：筋/圆顶/参考几何 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
 | N30 | P2 | 零件长尾波3：多实体 combine + 通用草图原语 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
 | N31 | P2 | CSG 契约 v2 扩 op（D5 范围随波次驱动） | 主 | U1 + N28-N30 任一完成 | 3h/1晚 | `[ ]` | |
@@ -131,7 +131,7 @@
 - [ ] 2. 结论回填本节 + 四期 §12（双处）；若走优化批，**预算线不动**（禁放室断言过闸）。
 
 **执行记录**：
-> （待回填）
+> （2026-08-31 复核会话尝试执行：SW 运行中（2 进程）+ CPU 78%——空闲条件不满足，不硬跑（负载下跑出的红/绿都不构成关单证据）。留待真正空闲窗口：SW 关闭、CPU<20%。旁证：N27 前后两轮全套（631/637）perf 用例均绿。）
 
 ---
 
@@ -163,7 +163,7 @@
 
 **方法论**（ADR-0011，全波次通用）：先类型库取证（PS 反射枚举 InsertProtrusionLoft/Swept 系签名与依赖接口）→ `tools/probe_*` 实机探针数值窗口取证 → TDD（FakeModel 红→绿）→ 工具注册 → 实机 e2e。
 
-- [ ] 1. **类型库取证**：探针确认放样（ProfileFeatures/LoftedFeature 系）与扫描（SweptFeature/路径+轮廓）API 可达性与参数签名；不可达面如实记录并走数学替代路线（先例：T21 螺纹 InsertHelix 可建）。
+- [x] 1. **类型库取证**：探针确认放样（ProfileFeatures/LoftedFeature 系）与扫描（SweptFeature/路径+轮廓）API 可达性与参数签名；不可达面如实记录并走数学替代路线（先例：T21 螺纹 InsertHelix 可建）。
 - [ ] 2. **TDD**：`tests/test_part_loft.py`（或并入既有 part 域测试）—— FakeModel 双打：工具调用序列、剖面有序性校验、错误契约（剖面数 <2 报 INVALID_PARAMETER）。
 - [ ] 3. **实现**：`registry/part.py` 新增 `part_create_loft` / `part_create_swept`（预览 READ_ONLY 与执行 DESTRUCTIVE 分离，先例 ADR-0007）；实现在 `solidworks_api/` 对应模块；工具计数 4 处断言 69→71 同步（§2 第 10 条）。
 - [ ] 4. **实机 e2e**：放样两圆截面→体积数值窗口断言；扫描圆沿路径→体积断言；ad-hoc 脚本**随手 close_document**（实机坑：文档挂着会让 SaveAs3 报 code 1）。
@@ -173,7 +173,10 @@
 **验收**：FakeModel 测试绿；实机两特征体积窗口断言过；工具数 71（默认）；README 工具清单同步。
 
 **执行记录**：
-> （待回填）
+> **2026-08-31 步骤 1 取证（第一晚切片）**：新探针 `tools/probe_part/probe_loft_sweep_enum.py`（N9 probe_featuremgr_enum 同模式，纯 makepy 缓存枚举不连 SW；含 def 多行拼接修正），log `output/probe_n28_enum.log`，结论回填探针头 + INDEX.md。要点：
+> - **sweep 路线锁定**：`IFeatureManager.InsertProtrusionSwept4` 20 参全签名已取证，尾部 `CircularProfile/CircularProfileDiameter/Direction` 与 N9 的 CutSwept5 同款——**圆截面扫描可免轮廓草图**（最简形态：一条路径草图+typed FM 直调，N9 已验证 typed FM 铁律）。备选：CreateDefinition+SweepFeatureData（数据类存在，直调失败再启用）。注意 IModelDoc2 同名方法是 12 参异构体，勿混。
+> - **loft 路线待定（类型库双接口实证无 InsertProtrusionLoft）**：2026 类型库 IFeatureManager/IModelDoc2 均无凸台放样直接 API（仅放样曲面 InsertLoftRefSurface2 与老式 IModelDoc2.AddLoftSection）。步骤 2 实机收敛两候选：A. CreateDefinition(swTnLoft*)+LoftFeatureData+CreateFeature（swTn 值须 PS 反射 swconst.dll，先例 swFmSweepThread=87）；B. AddLoftSection 老式序列。
+> - 下一晚继续：步骤 2（探针实机收敛 loft 路线 + sweep 最简形态验证）→ TDD → 实现 → e2e。
 
 ---
 

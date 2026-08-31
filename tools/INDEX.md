@@ -17,6 +17,7 @@
 | probe_imported_annular_cut.py | 导入体环形切除 | STEP 导入体上的 annular cut | 治理期 |
 | probe_sheet_metal_thread.py | 钣金基体法兰/真实螺纹 | BaseFlange 16 参（PCBA=Nothing）；InsertHelix 10 参 def=0 可建可选中（REFERENCECURVES）但 InsertCutSwept4 三形态零产出 BLOCKED | T21 |
 | probe_featuremgr_enum.py | FeatureManager 类型库枚举 | makepy def 签名：FLP4=20 参/FLP5=22、InsertMirrorFeature2=5 参(ScopeOptions)、InsertMultiFaceDraft=6 参、InsertCutSwept5=22 参(CircularProfile)；枚举常量不在 makepy vars()，需 PowerShell 反射 swconst.dll（swFmLPattern=6/swFmLocalLPattern=108/swFmSweepThread=87） | N9 |
+| probe_loft_sweep_enum.py | loft/sweep 类型库枚举 | **sweep 首选 IFeatureManager.InsertProtrusionSwept4（20 参，尾部 CircularProfile/Diameter/Direction——圆截面可免轮廓草图）**；**凸台放样无 InsertProtrusionLoft 直接 API**（IFeatureManager/IModelDoc2 双查实证，仅曲面 InsertLoftRefSurface2 与老式 AddLoftSection），loft 走 CreateDefinition(swTnLoft?)+LoftFeatureData 或 AddLoftSection 序列——swTn* 值仍需 PS 反射 | N28 |
 | probe_n9_unblock.py | mirror/draft/pattern/螺纹解锁 | 13 轮收敛 3/4：mirror=InsertMirrorFeature2(...,ScopeOptions=0)+基准面 mark2；draft=typed FM InsertMultiFaceDraft+拔模面 mark1 先中性面 mark2 后；thread=helix REFERENCECURVES mark4+InsertCutSwept5(**Alignment=False**)+CircularProfile；pattern BLOCKED（直调全组合零产出/AccessSelections serverfault/属性 put 编组崩）→生产走数学替代；typed FM 铁律+call_or_value 方法/属性二义 | N9 |
 
 ## probe_assembly/ — 装配域
