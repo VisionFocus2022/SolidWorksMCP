@@ -27,6 +27,15 @@ pytest_report.xml
 # Scratch outputs (generated CAD files, smoke artifacts)
 output/
 
+# Root-level smoke/product artifacts (written to CWD by e2e runs and ring_light)
+/part.STL
+/part.step
+/ring.generated.stl
+/ring.layout.json
+
+# Qoder workspace state (harness runs, local plans)
+.qoder/
+
 # SolidWorks lock files
 ~$*
 

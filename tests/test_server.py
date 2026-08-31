@@ -39,6 +39,19 @@ class TestServerRegistration(unittest.TestCase):
         self.assertIsNotNone(threaded)
         self.assertIn("spec", threaded.parameters["properties"])
 
+    def test_threaded_hole_spec_is_literal_enum(self):
+        """N19: spec exposes the THREAD_SPECS enum so LLMs pick valid taps."""
+        from typing import get_args
+
+        from solidworks_mcp.registry.part import ThreadSpec
+        from solidworks_mcp.solidworks_api.constants import THREAD_SPECS
+
+        self.assertEqual(set(get_args(ThreadSpec)), set(THREAD_SPECS))
+        threaded = mcp._tool_manager.get_tool("solidworks_part_cut_threaded_hole")
+        enum = threaded.parameters["properties"]["spec"].get("enum")
+        self.assertIsNotNone(enum, "spec must be a Literal so the schema carries an enum")
+        self.assertEqual(set(enum), set(THREAD_SPECS))
+
     def test_n9_unlocked_tools_are_registered(self):
         mirror = mcp._tool_manager.get_tool("solidworks_features_mirror")
         draft = mcp._tool_manager.get_tool("solidworks_features_apply_draft")

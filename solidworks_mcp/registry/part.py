@@ -59,6 +59,22 @@ from .base import (
     _call_connected,
 )
 
+# Keep in sync with THREAD_SPECS in solidworks_api/constants.py —
+# test_threaded_hole_spec_is_literal_enum pins the two together.
+ThreadSpec = Literal[
+    "M2",
+    "M2.5",
+    "M3",
+    "M4",
+    "M5",
+    "M6",
+    "M8",
+    "M10",
+    "M12",
+    "M16",
+    "M20",
+]
+
 
 def solidworks_part_new(
     save_path: Optional[str] = None,
@@ -212,7 +228,7 @@ def solidworks_part_apply_shell(
 
 
 def solidworks_part_cut_threaded_hole(
-    spec: NonEmptyString,
+    spec: ThreadSpec,
     x: FiniteMM = 0.0,
     y: FiniteMM = 0.0,
     plane: NonEmptyString = "top",
