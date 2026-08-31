@@ -52,7 +52,7 @@
 7. **安全红线**（继承）：COM 调用必须经 `run_com(...)`；文件操作在 `allowed_root` 内；破坏性工具标 `DESTRUCTIVE`；MCP 入参 mm、COM 层 m；主仓覆盖率 ≥89%（CI 硬门 80% 不得降）；perf 断言禁放宽。
 8. **测试命令基线**：
    - 主仓库：`venv\Scripts\python.exe -m pytest tests/ -q` → 基线 **485 passed + 95 subtests，约 12-22s**（2026-08-31，N19 后）；
-   - aicad 仓库（在 aicad/ 内）：`venv\Scripts\python.exe -m pytest tests -q` → **631 passed**（2026-08-31 两轮负载下 perf 均绿；严格空闲条件未验=N26）；
+   - aicad 仓库（在 aicad/ 内）：`venv\Scripts\python.exe -m pytest tests -q` → **637 passed**（2026-08-31 N27 后，两轮绿；此前基线 631；perf 负载下绿，严格空闲条件未验=N26）；
    - 实机 e2e：`venv\Scripts\python.exe tools\e2e_sw_smoke.py`（需 SW 运行）。
 9. **中断恢复**：读到未勾选步骤继续；已勾选产物未提交则先补提交。以 `git status`/`git log` 实时状态为准，勿信旧快照。
 10. **工具计数同步**：S3/S4 主仓任务凡新增工具，先改 `tests/test_infrastructure.py` 与 `tests/test_server.py` 的 4 处计数断言（现 69 默认 / 71 开产品工具），再动实现。
@@ -66,7 +66,7 @@
 | N24 | P1 | 主仓 CI 激活与首跑修复批（D3） | 主 | U6（原 U1+U3 远端部分已完成） | 2h/1晚 | `[!]` BLOCKED（远端接入+推送已完成 2026-08-31；CI 首跑被**账户计费挡板**拦停——等 U6 后 re-run 观测，run 33389164476 定谳非代码问题） | |
 | N25 | P1 | aicad 远端接入与 CI 绑定（承接四期 N22） | ai | 无（U2 已完成） | 1h/1晚 | `[ ]`（远端接入+69 提交首推已由 2026-08-31 会话完成；余步：untracked 脚本处置 + CI 绑定（同受 U6 计费挡）+ 双回填） | |
 | N26 | P2 | aicad perf 预算空闲机复验（承接四期 N23） | ai | 无（需空闲机） | 0.5h | `[ ]` 需空闲机 | |
-| N27 | P2 | 缓存命中率报表导出 CSV/JSON（H2） | ai | 无 | 2h/1晚 | `[ ]` | |
+| N27 | P2 | 缓存命中率报表导出 CSV/JSON（H2） | ai | 无 | 2h/1晚 | `[x]` 2026-08-31（b5d26f2，637 passed；偏差：测试文件名 test_stats_export_route.py） | 2026-08-31 |
 | N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
 | N29 | P2 | 零件长尾波2：筋/圆顶/参考几何 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
 | N30 | P2 | 零件长尾波3：多实体 combine + 通用草图原语 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
@@ -139,15 +139,21 @@
 
 **目标**：缓存命中率「有数据无报表」收口（审查 G3）——`/api/health` 已有命中率数据，补可导出面供 nightly 观测。
 
-- [ ] 1. **TDD**：`tests/test_stats_export.py` —— 断言导出面（建议 `GET /api/stats/export?fmt=csv|json`，与 N20 的 `fmt=` 先例同构）：CSV 含表头+命中率行、JSON 键齐全（hit/miss/rate/条目数）；无缓存数据时返回空表而非 500。
-- [ ] 2. **实现**：从现有 health/stats 数据源同源取数（勿复制第二份统计逻辑）；CSV 用标准库 `csv` 模块，无新依赖。
-- [ ] 3. aicad 全套绿（631+新测）；若 N25 已接 github CI 则同步进 CI。
-- [ ] 4. 提交：`feat(api): 缓存命中率报表导出（N27）`；回填状态与执行记录。
+- [x] 1. **TDD**：`tests/test_stats_export.py` —— 断言导出面（建议 `GET /api/stats/export?fmt=csv|json`，与 N20 的 `fmt=` 先例同构）：CSV 含表头+命中率行、JSON 键齐全（hit/miss/rate/条目数）；无缓存数据时返回空表而非 500。
+- [x] 2. **实现**：从现有 health/stats 数据源同源取数（勿复制第二份统计逻辑）；CSV 用标准库 `csv` 模块，无新依赖。
+- [x] 3. aicad 全套绿（631+新测）；若 N25 已接 github CI 则同步进 CI。（全套 637 绿；CI 同步待 N25/U6 解锁——非本任务可完成）
+- [x] 4. 提交：`feat(api): 缓存命中率报表导出（N27）`；回填状态与执行记录。
 
 **验收**：`curl .../api/stats/export?fmt=csv` 与 `fmt=json` 均可导出且数值与 `/api/health` 一致；全套绿。
 
 **执行记录**：
-> （待回填）
+> **2026-08-31 N27 执行（自治会话；取证 4 路并行 + 三视角审查）**：
+> - **取证**：权威源=`queue.cache_stats()`（deps.py:255-267；ResultCache.stats() 五键 hits/misses/entries/bytes/max_bytes + tiers）——**全仓无 rate**，故 hit_rate 为导出端点纯派生（`round(hits/(hits+misses), 4)`，0/0→0.0）；fmt 模板=BOM 端点（routes_assembly.py:139，`Query("json", pattern="^(json|csv)$")`→非法值 422）；确认全仓无既有 stats 导出路由（不重复造轮子）。
+> - **偏差（记录不阻断）**：测试文件名由 `test_stats_export.py` 改为 **`test_stats_export_route.py`**——避开既有 `test_loop_stats.py`（循环统计）的同名混淆，取证 sweep 建议。
+> - **实现**：`aicad/aicad/main.py` 模块级 `_hit_rate`/`_cache_report`/`_cache_stats_csv` + `create_app` 内 `GET /api/stats/export`（紧跟 /api/health；同源取数 `request.app.state.aicad.queue.cache_stats()`，无第二份统计逻辑）。CSV=metric,value 长表（RFC-4180，`text/csv; charset=utf-8`，attachment `cache_stats.csv`，tiers 逐层展开）；cache 未接线（cache_stats()=None）→ CSV 仅表头 / JSON `{"cache": null}`——空表而非 500。
+> - **审查（三视角）**：correctness 与 consistency 两审查者判「可提交」（3 条 LOW 全处置：①提交显式路径收口✅②CSV 序列化抽 `_cache_stats_csv` 对齐 `bom_csv()` 先例✅已重构并复绿③端点暂驻 main.py 与 health 内聚，若后续 stats 系列成形再迁 routes_stats.py——留档不改）；boundary 审查者因环境缺陷（子代理无文件读取工具）未能执行，由主会话补齐五项清单：`_usage()` 对 root 缺失容错返回 (0,0)✅、StringIO/csv 为线程局部✅、diff 范围仅 2 文件✅、**新代码分支全覆盖**（main.py 单文件分支覆盖 84%>80，missing 全为旧代码）✅、health 与计数器语义零改动✅。
+> - **验证**：TDD 红（6 failed 404）→绿（6 passed）；全套 **637 passed**（631 基线+6 新增）两轮（实现后 213.6s / 重构后 208.7s）；数值与 /api/health 一致性有专测 `test_export_json_matches_health`。提交：aicad `b5d26f2`（+160/-1，ahead origin/master 1，**未推送**）。
+> - **未做（边界外）**：CI 同步（属 N25 步骤 4，仍受 U6 计费挡板；解锁后本端点随全套自然进 CI）。同工作树出现 `docs/prd-s5-intelligent-autonomy.md`（另一并行交互会话的 S5 PRD 产物，其自述「不落 optimization-plan、五期不受影响」）——未纳入本提交，归属用户裁决。
 
 ---
 
@@ -292,3 +298,9 @@ U2(用户给aicad远端) ─┬→ N25(aicad远端CI) ─┤
 - D7（远端命名）仅影响认知不影响执行，U5 低优先级。
 - **github 账户（VisionFocus2022）私有仓 Actions 计费挡板（2026-08-31 实证）**：U6 处理前 N24/N25 的 CI 步全部挂起；git 推送不受影响（备份已达成）。
 - **gitee 侧自动化天花板**：本机存储的是账号密码非 PAT，API 建仓 401——gitee 补充远端需用户手动建仓或提供私人令牌（U2 偏差注记）。
+
+### 17.1 复核记录（2026-08-31 复核会话：审查→计划覆盖度核验）
+
+用户指令「根据审查结论制定修复完善优化计划」的复核结论：**本计划（第五期）即该指令的产出，审查 G1-G8 / D1-D7 / S0-S5 已 100% 承接**（G1→U1-U6+N24/N25；G2→N26；G3→N27/N34/U4；G4→N28-N30；G5→N32/N33；G6→N31；G7/G8→远期观察项），不再另立新计划文件（避免双真相源破坏 AGENTS.md「读最新日期计划」契约）。执行指引抽查全部属实：4 处工具计数断言（`tests/test_infrastructure.py:167/180`、`tests/test_server.py:26/157`）、aicad 前端在 `aicad/frontend/`、`/api/health` 数据源在 `aicad/aicad/`。
+
+**复核新发现并已修复**：`output/` 整体被 .gitignore 忽略（a276005），导致 5 份计划 + 审查五件套**零异地备份**——02:30 自动任务真相源单机单份，与 G1 精神相悖。已改白名单（`output/*` + 否定 `!output/optimization-plan-*.md`、`!output/architecture-evolution-*/`）并 `git add`（12 文件 + .gitignore）；**commit/push 待用户批准**（红线「绝不自动 commit」）。
