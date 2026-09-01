@@ -67,7 +67,7 @@
 | N25 | P1 | aicad 远端接入与 CI 绑定（承接四期 N22） | ai | 无（U2 已完成） | 1h/1晚 | `[ ]`（远端接入+69 提交首推已由 2026-08-31 会话完成；余步：untracked 脚本处置 + CI 绑定（同受 U6 计费挡）+ 双回填） | |
 | N26 | P2 | aicad perf 预算空闲机复验（承接四期 N23） | ai | 无（需空闲机） | 0.5h | `[!]` BLOCKED（2026-08-31 复核：SW 运行中 2 进程 + CPU 78%，空闲条件不满足——需 SW 关闭、CPU<20% 窗口；另 N27 前后两轮 631/637 全套负载下 perf 均绿，假红判断进一步加固） | |
 | N27 | P2 | 缓存命中率报表导出 CSV/JSON（H2） | ai | 无 | 2h/1晚 | `[x]` 2026-08-31（b5d26f2，637 passed；偏差：测试文件名 test_stats_export_route.py） | 2026-08-31 |
-| N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[~]` 步骤1取证✅（2026-08-31；sweep 路线锁定，loft 路线待实机收敛） | |
+| N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[~]` 步骤1-2取证✅（2026-09-01；两路线均已实机锁定，TDD/实现待开） | |
 | N29 | P2 | 零件长尾波2：筋/圆顶/参考几何 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
 | N30 | P2 | 零件长尾波3：多实体 combine + 通用草图原语 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
 | N31 | P2 | CSG 契约 v2 扩 op（D5 范围随波次驱动） | 主 | U1 + N28-N30 任一完成 | 3h/1晚 | `[ ]` | |
@@ -177,6 +177,12 @@
 > - **sweep 路线锁定**：`IFeatureManager.InsertProtrusionSwept4` 20 参全签名已取证，尾部 `CircularProfile/CircularProfileDiameter/Direction` 与 N9 的 CutSwept5 同款——**圆截面扫描可免轮廓草图**（最简形态：一条路径草图+typed FM 直调，N9 已验证 typed FM 铁律）。备选：CreateDefinition+SweepFeatureData（数据类存在，直调失败再启用）。注意 IModelDoc2 同名方法是 12 参异构体，勿混。
 > - **loft 路线待定（类型库双接口实证无 InsertProtrusionLoft）**：2026 类型库 IFeatureManager/IModelDoc2 均无凸台放样直接 API（仅放样曲面 InsertLoftRefSurface2 与老式 IModelDoc2.AddLoftSection）。步骤 2 实机收敛两候选：A. CreateDefinition(swTnLoft*)+LoftFeatureData+CreateFeature（swTn 值须 PS 反射 swconst.dll，先例 swFmSweepThread=87）；B. AddLoftSection 老式序列。
 > - 下一晚继续：步骤 2（探针实机收敛 loft 路线 + sweep 最简形态验证）→ TDD → 实现 → e2e。
+> **2026-09-01 步骤 2 实机收敛（第二晚切片，探针 `tools/probe_part/probe_n28_unblock.py`）——2/2 一次收敛，两路线锁定**：
+> - **步骤 1 结论修正**：凸台放样的直接 API **存在**——SW 术语叫 **Blend**（`IModelDoc2.InsertProtrusionBlend2/3/4`、`IFeatureManager.InsertProtrusionBlend(2)`；`swFmBlend=9` 反射佐证）。步骤 1 的「无 InsertProtrusionLoft 直接 API」系关键词漏 "Blend" 的误报（0011 方法论价值即在此：两步互证纠错）。
+> - **sweep 契约**：路径草图 `SelectByID2(SKETCH, mark=4)` → typed `fm.InsertProtrusionSwept4(..., Alignment=False, ..., CircularProfile=True, dia_m, Direction=True)`（20 参全签名见探针头）——mark4+Alignment=False 与 N9 CutSwept5/helix 先例同款；R20 90°弧×⌀10 实测 2467.40 mm³ = 理论 250π² 精确。
+> - **loft 契约**：`fm.InsertRefPlane(8, dist_m, 0,0,0,0)`（IFeatureManager 6 参，Distance 约束）建剖面基准面 → 各剖面 mark=1 累加选中 → typed `doc2.InsertProtrusionBlend2(False, False, False)`；r10→r15 距 30 实测 14922.04（理论圆台 14922.57 差 0.35%——**TDD 窗口按 ±1%**）。
+> - 附带：N29 参考几何首个数据点（InsertRefPlane 可用）；弧=ISketchManager.CreateArc 10 参（CreateArc2 属 ModelDoc 老接口）；本机 makepy 缓存曾遭 Temp 清理（gen_py 易失），手动 `python -m win32com.client.makepy sldworks.tlb` 重建（EnsureDispatch 对 SW 报「can not automate makepy」不可用）。
+> - 环境注记：本轮 SW 曾退出，经 `connect(launch_if_needed=True)` 启动 v34.2.1。下一晚：TDD（步骤 2 正式条目）→ 实现（步骤 3，工具计数 69→71）→ 实机 e2e（步骤 4）。
 
 ---
 
