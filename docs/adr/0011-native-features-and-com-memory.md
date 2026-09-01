@@ -59,3 +59,25 @@ FeatureData 扫描中零产出（BLOCKED）；soak 100 轮 SW 工作集 +1.83GB
 四特征族 3 原生 + 1 替代全部解锁；soak 泄漏从"嫌疑 1.83GB"收敛为
 "已知 SW 语义 + 失败路径已堵"。证据：`51bd1c3`、`eca371c`、探针
 `tools/probe_part/probe_n9_unblock.py`、`output/soak-report-*.json`。
+
+
+---
+
+## 增补（N28，2026-09-01）：loft/sweep 特征解锁——术语陷阱与返回值不可靠
+
+- **决策**：凸台放样走**老式 Blend 直调**（`IModelDoc2.InsertProtrusionBlend2(Closed,
+  KeepTangency, ForceNonRational)` 三参），不走 CreateDefinition(swFmBlend=9)+
+  LoftFeatureData 路线；扫描凸台走 `IFeatureManager.InsertProtrusionSwept4`
+  20 参 + `CircularProfile=True` 免轮廓。中间剖面基准面用 `FeatureManager.
+  InsertRefPlane(8, distance)`（Distance 约束）。
+- **取证修正**：类型库关键词搜 "Loft" 会漏光——SW 把放样族叫 **Blend**
+  （`InsertProtrusionBlend*`/`AddLoftSection`/`swFmBlend=9`），两步取证互证
+  （枚举 → 实机探针）纠正了「无直接 API」的初判。方法论教训：**术语必须
+  从 swFeatureNameID_e 反射拿权威词根，不能按通用 CAD 词汇表搜**。
+- **返回值契约**：`InsertProtrusionBlend2` 成功时也返回 None（FeatureFillet
+  同族，本 ADR「成功判据=特征树差集」纪律再次生效）；`InsertProtrusionSwept4`
+  返回 IFeature 可用（本次实证）。生产 `create_loft` 因此用树差集判据，
+  `create_swept` 用返回值判据。
+- **证据**：探针 `tools/probe_part/probe_loft_sweep_enum.py` +
+  `probe_n28_unblock.py`（2/2 一次收敛）、e2e `tools/e2e_n28.py`
+  （sweep 2467.40 精确 / loft 14922.04 窗口 0.004%）。

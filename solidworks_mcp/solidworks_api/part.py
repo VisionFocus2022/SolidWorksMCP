@@ -6,13 +6,20 @@ import logging
 import math
 from typing import Any, Optional
 
+import pythoncom
+from win32com.client import gencache
+
 from solidworks_mcp.solidworks_api.app import SolidWorksApp, SolidWorksNotRunningError
 from solidworks_mcp.solidworks_api.constants import (
     swDocPART,
     swFileSaveErrorNone,
     swSaveAsOptions_Silent,
 )
-from solidworks_mcp.solidworks_api.geometry import mm_to_m, select_plane
+from solidworks_mcp.solidworks_api.geometry import (
+    latest_feature_name,
+    mm_to_m,
+    select_plane,
+)
 from solidworks_mcp.solidworks_api.sketch import extrude_boss, extrude_boss_draft
 from solidworks_mcp.utils.common import error_response, success_response
 from solidworks_mcp.utils.com import call_or_value
@@ -550,6 +557,270 @@ def create_revolved(
     except Exception as exc:
         logger.exception("Failed to create revolved part")
         return error_response(f"Failed to create revolved part: {exc}")
+
+
+def _typed_doc2(model: Any) -> Any:
+    """Wrap in the makepy IModelDoc2 class when possible.
+
+    The blend boss rejects dynamic calls with a silent None (N28 e2e,
+    same family as quirks 28-3: ModelDoc2 dynamic arity issues); fakes
+    and cache-less hosts fall through to the raw dispatch."""
+    mods = gencache.GetModuleForProgID("SldWorks.Application")
+    raw = getattr(model, "_oleobj_", None)
+    if mods is None or raw is None:
+        return model
+    return mods.IModelDoc2(raw)
+
+
+def _sweep_path_sketch(model: Any, path_type: str, radius_mm, angle_deg, length_mm) -> None:
+    """Draw the sweep path sketch on the currently selected plane."""
+    model.SketchManager.InsertSketch(True)
+    if path_type == "arc":
+        radius_m = mm_to_m(radius_mm)
+        end_angle = math.radians(angle_deg)
+        model.SketchManager.CreateArc(
+            0.0, 0.0, 0.0,
+            radius_m, 0.0, 0.0,
+            radius_m * math.cos(end_angle), radius_m * math.sin(end_angle), 0.0,
+            1,
+        )
+    else:
+        model.SketchManager.CreateLine(
+            0.0, 0.0, 0.0, mm_to_m(length_mm), 0.0, 0.0
+        )
+    model.SketchManager.InsertSketch(True)
+
+
+def create_swept(
+    sw_app: SolidWorksApp,
+    diameter_mm: float,
+    path_type: str = "arc",
+    radius_mm: Optional[float] = None,
+    angle_deg: float = 90.0,
+    length_mm: Optional[float] = None,
+    plane: str = "front",
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+) -> dict:
+    """Swept protrusion: circular profile along an arc or line sketch path.
+
+    Real-machine contract (N28 probe, 2026-09-01): the path sketch is
+    selected as SKETCH with mark=4, and the boss call is
+    InsertProtrusionSwept4 with Alignment=False and CircularProfile=True,
+    so the diameter rides the call and no profile sketch is needed."""
+    try:
+        diameter_mm = positive_number("diameter_mm", diameter_mm)
+        if path_type not in ("arc", "line"):
+            return error_response(
+                "path_type must be 'arc' or 'line'", code="INVALID_PARAMETER"
+            )
+        if plane != "front":
+            return error_response(
+                "Only the front plane sweep is supported",
+                code="INVALID_PARAMETER",
+            )
+        if path_type == "arc":
+            if radius_mm is None or not math.isfinite(radius_mm) or radius_mm <= 0:
+                return error_response(
+                    "arc path needs radius_mm > 0", code="INVALID_PARAMETER"
+                )
+            if not math.isfinite(angle_deg) or not 0 < abs(angle_deg) <= 360:
+                return error_response(
+                    "angle_deg must be in (0, 360]", code="INVALID_PARAMETER"
+                )
+        else:
+            if length_mm is None or not math.isfinite(length_mm) or length_mm <= 0:
+                return error_response(
+                    "line path needs length_mm > 0", code="INVALID_PARAMETER"
+                )
+        if save_path:
+            valid, message = validate_output_file(
+                save_path, {".sldprt"}, overwrite_confirm
+            )
+            if not valid:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+
+        model, _was_created = _get_or_create_part(sw_app)
+        if _select_plane(model) is None:
+            return error_response("Could not select a reference plane")
+
+        _sweep_path_sketch(model, path_type, radius_mm, angle_deg, length_mm)
+
+        model.ClearSelection2(True)
+        sketch_name = latest_feature_name(model)
+        if not model.Extension.SelectByID2(
+            sketch_name, "SKETCH", 0, 0, 0, False, 4, pythoncom.Nothing, 0
+        ):
+            return error_response(
+                f"Could not select sweep path sketch {sketch_name!r}",
+                code="SW_API_ERROR",
+            )
+
+        feature = model.FeatureManager.InsertProtrusionSwept4(
+            False,  # Propagate
+            False,  # Alignment — False is the unlock for sketch paths (N28 probe)
+            0,      # TwistCtrlOption = swTwistControlFollowPath
+            False,  # KeepTangency
+            False,  # BAdvancedSmoothing
+            0,      # StartMatchingType
+            0,      # EndMatchingType
+            False,  # IsThinBody
+            0.0,    # Thickness1
+            0.0,    # Thickness2
+            0,      # ThinType
+            0,      # PathAlign
+            True,   # Merge
+            True,   # UseFeatScope
+            True,   # UseAutoSelect
+            0.0,    # TwistAngle
+            True,   # BMergeSmoothFaces
+            True,   # CircularProfile — no profile sketch needed
+            mm_to_m(diameter_mm),  # CircularProfileDiameter
+            True,   # Direction
+        )
+        if feature is None:
+            return error_response("Swept feature creation rejected")
+
+        result = {"feature_name": feature.Name}
+        if save_path:
+            ok, message, sink_path = ensure_sink_path(save_path)
+            if not ok:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
+            if save_result != swFileSaveErrorNone:
+                return error_response(f"SaveAs3 failed with code {save_result}")
+            result["saved_to"] = save_path
+
+        return success_response(
+            data=result,
+            message=(
+                f"Created swept protrusion diameter={diameter_mm}mm along "
+                f"a {path_type} path"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to create swept protrusion")
+        return error_response(f"Failed to create swept protrusion: {exc}")
+
+
+def create_loft(
+    sw_app: SolidWorksApp,
+    profile_diameters_mm,
+    section_spacing_mm,
+    plane: str = "front",
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+) -> dict:
+    """Lofted protrusion between circular sections on parallel planes.
+
+    Real-machine contract (N28 probe, 2026-09-01): SW names a loft a
+    "blend" — the boss call is IModelDoc2.InsertProtrusionBlend2(Closed,
+    KeepTangency, ForceNonRational) with the sections selected as SKETCH
+    mark=1, accumulating. Intermediate planes are FeatureManager.
+    InsertRefPlane(8, distance) offsets parallel to the base plane."""
+    try:
+        if len(profile_diameters_mm) < 2:
+            return error_response(
+                "loft needs at least 2 profile sections",
+                code="INVALID_PARAMETER",
+            )
+        for diameter in profile_diameters_mm:
+            positive_number("profile_diameters_mm", diameter)
+        section_spacing_mm = positive_number(
+            "section_spacing_mm", section_spacing_mm
+        )
+        if plane != "front":
+            return error_response(
+                "Only the front plane loft is supported",
+                code="INVALID_PARAMETER",
+            )
+        if save_path:
+            valid, message = validate_output_file(
+                save_path, {".sldprt"}, overwrite_confirm
+            )
+            if not valid:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+
+        model, _was_created = _get_or_create_part(sw_app)
+        base_plane = _select_plane(model)
+        if base_plane is None:
+            return error_response("Could not select a reference plane")
+
+        section_names = []
+        for index, diameter in enumerate(profile_diameters_mm):
+            if index == 0:
+                plane_name = base_plane
+            else:
+                model.ClearSelection2(True)
+                if not model.Extension.SelectByID2(
+                    base_plane, "PLANE", 0, 0, 0, False, 0, pythoncom.Nothing, 0
+                ):
+                    return error_response(
+                        f"Could not re-select {base_plane!r} for offset",
+                        code="SW_API_ERROR",
+                    )
+                if model.FeatureManager.InsertRefPlane(
+                    8, mm_to_m(section_spacing_mm * index), 0, 0, 0, 0
+                ) is None:
+                    return error_response("Offset reference plane rejected")
+                plane_name = latest_feature_name(model)
+            model.ClearSelection2(True)
+            if not model.Extension.SelectByID2(
+                plane_name, "PLANE", 0, 0, 0, False, 0, pythoncom.Nothing, 0
+            ):
+                return error_response(
+                    f"Could not select section plane {plane_name!r}",
+                    code="SW_API_ERROR",
+                )
+            _create_circle_sketch(model, mm_to_m(diameter) / 2.0)
+            section_names.append(latest_feature_name(model))
+
+        model.ClearSelection2(True)
+        for position, name in enumerate(section_names):
+            if not model.Extension.SelectByID2(
+                name, "SKETCH", 0, 0, 0, position > 0, 1, pythoncom.Nothing, 0
+            ):
+                return error_response(
+                    f"Could not select loft section {name!r}",
+                    code="SW_API_ERROR",
+                )
+
+        # Blend2's return value is unreliable (returns None on success —
+        # same family as FeatureFillet, quirks 17): the verdict is the tree.
+        before = latest_feature_name(model)
+        _typed_doc2(model).InsertProtrusionBlend2(False, False, False)
+        after = latest_feature_name(model)
+        if after == before:
+            return error_response("Loft feature creation rejected")
+
+        result = {"feature_name": after}
+        if save_path:
+            ok, message, sink_path = ensure_sink_path(save_path)
+            if not ok:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
+            if save_result != swFileSaveErrorNone:
+                return error_response(f"SaveAs3 failed with code {save_result}")
+            result["saved_to"] = save_path
+
+        return success_response(
+            data=result,
+            message=(
+                f"Created lofted protrusion with {len(profile_diameters_mm)} "
+                f"circular sections, spacing {section_spacing_mm}mm"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to create lofted protrusion")
+        return error_response(f"Failed to create lofted protrusion: {exc}")
 
 
 def get_mass_properties(sw_app: SolidWorksApp) -> dict:

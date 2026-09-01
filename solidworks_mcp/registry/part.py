@@ -35,7 +35,9 @@ from solidworks_mcp.solidworks_api.decorations import (
 from solidworks_mcp.solidworks_api.features import cut_real_thread
 from solidworks_mcp.solidworks_api.part import (
     create_cone,
+    create_loft,
     create_revolved,
+    create_swept,
     get_mass_properties,
 )
 from solidworks_mcp.solidworks_api.pattern import (
@@ -184,6 +186,56 @@ def solidworks_part_create_revolved(
     return _call_connected(
         lambda sw: create_revolved(
             sw, outer_diameter, height, bore_diameter, plane, save_path,
+            overwrite_confirm,
+        ),
+        launch_if_needed,
+    )
+
+
+def solidworks_part_create_swept(
+    diameter_mm: PositiveMM,
+    path_type: str = "arc",
+    radius_mm: Optional[PositiveMM] = None,
+    angle_deg: float = 90.0,
+    length_mm: Optional[PositiveMM] = None,
+    plane: str = "front",
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Solid swept protrusion: circular profile (diameter) along an arc or line sketch path."""
+    return _call_connected(
+        lambda sw: create_swept(
+            sw,
+            diameter_mm,
+            path_type,
+            radius_mm,
+            angle_deg,
+            length_mm,
+            plane,
+            save_path,
+            overwrite_confirm,
+        ),
+        launch_if_needed,
+    )
+
+
+def solidworks_part_create_loft(
+    profile_diameters_mm: List[PositiveMM],
+    section_spacing_mm: PositiveMM,
+    plane: str = "front",
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Lofted protrusion between circular sections on parallel planes (>=2 profiles)."""
+    return _call_connected(
+        lambda sw: create_loft(
+            sw,
+            profile_diameters_mm,
+            section_spacing_mm,
+            plane,
+            save_path,
             overwrite_confirm,
         ),
         launch_if_needed,
@@ -406,6 +458,12 @@ def register(mcp) -> None:
     mcp.tool(
         title="Create revolved part", annotations=STATE_CHANGE, structured_output=True
     )(solidworks_part_create_revolved)
+    mcp.tool(
+        title="Create swept part", annotations=STATE_CHANGE, structured_output=True
+    )(solidworks_part_create_swept)
+    mcp.tool(
+        title="Create lofted part", annotations=STATE_CHANGE, structured_output=True
+    )(solidworks_part_create_loft)
     mcp.tool(
         title="Apply fillet to faces", annotations=STATE_CHANGE, structured_output=True
     )(solidworks_part_apply_fillet)

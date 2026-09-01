@@ -51,7 +51,7 @@
 6. **节奏**：每晚 1 个任务为宜，最多 2 个（第二个必须 ≤2h 小任务）。
 7. **安全红线**（继承）：COM 调用必须经 `run_com(...)`；文件操作在 `allowed_root` 内；破坏性工具标 `DESTRUCTIVE`；MCP 入参 mm、COM 层 m；主仓覆盖率 ≥89%（CI 硬门 80% 不得降）；perf 断言禁放宽。
 8. **测试命令基线**：
-   - 主仓库：`venv\Scripts\python.exe -m pytest tests/ -q` → 基线 **485 passed + 95 subtests，约 12-22s**（2026-08-31，N19 后）；
+   - 主仓库：`venv\Scripts\python.exe -m pytest tests/ -q` → 基线 **495 passed + 97 subtests，约 10s**（2026-09-01，N28 后；此前 485+95；71 工具 5 处断言钉死）；
    - aicad 仓库（在 aicad/ 内）：`venv\Scripts\python.exe -m pytest tests -q` → **637 passed**（2026-08-31 N27 后，两轮绿；此前基线 631；perf 负载下绿，严格空闲条件未验=N26）；
    - 实机 e2e：`venv\Scripts\python.exe tools\e2e_sw_smoke.py`（需 SW 运行）。
 9. **中断恢复**：读到未勾选步骤继续；已勾选产物未提交则先补提交。以 `git status`/`git log` 实时状态为准，勿信旧快照。
@@ -67,7 +67,7 @@
 | N25 | P1 | aicad 远端接入与 CI 绑定（承接四期 N22） | ai | 无（U2 已完成） | 1h/1晚 | `[ ]`（远端接入+69 提交首推已由 2026-08-31 会话完成；余步：untracked 脚本处置 + CI 绑定（同受 U6 计费挡）+ 双回填） | |
 | N26 | P2 | aicad perf 预算空闲机复验（承接四期 N23） | ai | 无（需空闲机） | 0.5h | `[!]` BLOCKED（2026-08-31 复核：SW 运行中 2 进程 + CPU 78%，空闲条件不满足——需 SW 关闭、CPU<20% 窗口；另 N27 前后两轮 631/637 全套负载下 perf 均绿，假红判断进一步加固） | |
 | N27 | P2 | 缓存命中率报表导出 CSV/JSON（H2） | ai | 无 | 2h/1晚 | `[x]` 2026-08-31（b5d26f2，637 passed；偏差：测试文件名 test_stats_export_route.py） | 2026-08-31 |
-| N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[~]` 步骤1-2取证✅（2026-09-01；两路线均已实机锁定，TDD/实现待开） | |
+| N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（工具 71，495+97 绿，e2e 双 PASS） | 2026-09-01 |
 | N29 | P2 | 零件长尾波2：筋/圆顶/参考几何 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
 | N30 | P2 | 零件长尾波3：多实体 combine + 通用草图原语 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
 | N31 | P2 | CSG 契约 v2 扩 op（D5 范围随波次驱动） | 主 | U1 + N28-N30 任一完成 | 3h/1晚 | `[ ]` | |
@@ -164,11 +164,11 @@
 **方法论**（ADR-0011，全波次通用）：先类型库取证（PS 反射枚举 InsertProtrusionLoft/Swept 系签名与依赖接口）→ `tools/probe_*` 实机探针数值窗口取证 → TDD（FakeModel 红→绿）→ 工具注册 → 实机 e2e。
 
 - [x] 1. **类型库取证**：探针确认放样（ProfileFeatures/LoftedFeature 系）与扫描（SweptFeature/路径+轮廓）API 可达性与参数签名；不可达面如实记录并走数学替代路线（先例：T21 螺纹 InsertHelix 可建）。
-- [ ] 2. **TDD**：`tests/test_part_loft.py`（或并入既有 part 域测试）—— FakeModel 双打：工具调用序列、剖面有序性校验、错误契约（剖面数 <2 报 INVALID_PARAMETER）。
-- [ ] 3. **实现**：`registry/part.py` 新增 `part_create_loft` / `part_create_swept`（预览 READ_ONLY 与执行 DESTRUCTIVE 分离，先例 ADR-0007）；实现在 `solidworks_api/` 对应模块；工具计数 4 处断言 69→71 同步（§2 第 10 条）。
-- [ ] 4. **实机 e2e**：放样两圆截面→体积数值窗口断言；扫描圆沿路径→体积断言；ad-hoc 脚本**随手 close_document**（实机坑：文档挂着会让 SaveAs3 报 code 1）。
-- [ ] 5. 全套绿 + 提交 `feat(part): loft/sweep 放样扫描工具（N28）`；若路线有取舍，ADR-0011 追加一段。
-- [ ] 6. 回填本文件状态与执行记录。
+- [x] 2. **TDD**：`tests/test_part_loft.py`—— FakeModel 双打：调用序列（mark4/mark1×n/Blend2 三 False/Swept4 20 参米制）、剖面 <2 报 INVALID_PARAMETER、返回值/选择失败结构化。
+- [x] 3. **实现**：`solidworks_api/part.py` `create_swept`/`create_loft` + `registry/part.py` `solidworks_part_create_swept`/`solidworks_part_create_loft`；计数断言同步 69→71 ×4 处 + 产品工具 71→73 ×1（注解=STATE_CHANGE，与 create_revolved 同族；计划原文「预览/执行分离」若按字面做需 4 工具与计数 71 矛盾——取计数锚点，记偏差）。
+- [x] 4. **实机 e2e**：`tools/e2e_n28.py`——sweep ⌀10×R20 90°弧 2467.40（0.000%）；loft ⌀20→⌀30 距 30 14922.04（0.004%）；每场景随手 close_document ✓。
+- [x] 5. 全套绿（495 passed + 97 subtests）+ 提交；ADR-0011 追加「loft/sweep 增补」（术语陷阱+返回值契约）。
+- [x] 6. 回填本文件状态与执行记录。
 
 **验收**：FakeModel 测试绿；实机两特征体积窗口断言过；工具数 71（默认）；README 工具清单同步。
 
@@ -182,7 +182,14 @@
 > - **sweep 契约**：路径草图 `SelectByID2(SKETCH, mark=4)` → typed `fm.InsertProtrusionSwept4(..., Alignment=False, ..., CircularProfile=True, dia_m, Direction=True)`（20 参全签名见探针头）——mark4+Alignment=False 与 N9 CutSwept5/helix 先例同款；R20 90°弧×⌀10 实测 2467.40 mm³ = 理论 250π² 精确。
 > - **loft 契约**：`fm.InsertRefPlane(8, dist_m, 0,0,0,0)`（IFeatureManager 6 参，Distance 约束）建剖面基准面 → 各剖面 mark=1 累加选中 → typed `doc2.InsertProtrusionBlend2(False, False, False)`；r10→r15 距 30 实测 14922.04（理论圆台 14922.57 差 0.35%——**TDD 窗口按 ±1%**）。
 > - 附带：N29 参考几何首个数据点（InsertRefPlane 可用）；弧=ISketchManager.CreateArc 10 参（CreateArc2 属 ModelDoc 老接口）；本机 makepy 缓存曾遭 Temp 清理（gen_py 易失），手动 `python -m win32com.client.makepy sldworks.tlb` 重建（EnsureDispatch 对 SW 报「can not automate makepy」不可用）。
-> - 环境注记：本轮 SW 曾退出，经 `connect(launch_if_needed=True)` 启动 v34.2.1。下一晚：TDD（步骤 2 正式条目）→ 实现（步骤 3，工具计数 69→71）→ 实机 e2e（步骤 4）。
+> - 环境注记：本轮 SW 曾退出，经 `connect(launch_if_needed=True)` 启动 v34.2.1。
+> **2026-09-01 步骤 2-6（第三晚切片：TDD→实现→e2e，完成）**：
+> - **TDD 红→绿**：`tests/test_part_loft.py` 10 用例（先红：函数不存在；三次小修后绿——修的都是测试自身的口误/缺件，实现契约未变）。
+> - **实现要点**：`create_swept`（dynamic FM 20 参，返回值判据——e2e 实证返回 IFeature 可靠）；`create_loft`（剖面 1 在基准面 + `InsertRefPlane(8, i×spacing)` 建中间面 + 剖面 mark1 累加 + **typed** `IModelDoc2.InsertProtrusionBlend2`——dynamic 版 e2e 实证返回不可靠，**成功判据=特征树差集**，quirks 17 同族：blend 成功也返回 None，首版误用 None 判据被 e2e 抓出、树差集修复后 PASS）。
+> - **e2e**：`tools/e2e_n28.py` 双 PASS（sweep 2467.40 精确 / loft 14922.04 窗口 0.004%）；体积断言窗口 ±1%。
+> - **计数/文档同步**：test_infrastructure 167/180 + test_server 26/157 →71；test_server 164 产品工具 →73（替换脚本一度顺序污染 71→73 误伤新断言，按行修复；测试名 registers_69→71 同步）；README 两处数字同步（71 tools / 71→73）。
+> - **ADR-0011 增补**：loft/sweep 解锁段——Blend 术语陷阱（swFeatureNameID_e 是权威词根）+ Blend2 返回值不可靠契约。
+> - **偏差记录**：①工具注解用 STATE_CHANGE（非计划字面的预览/执行分离，理由见步骤 3）；②ruff 未装（lint N/A，py_compile 过）；③全套 subtests 95→97（71 工具的 subTest 计数 +2，非新增 subtest）。
 
 ---
 
