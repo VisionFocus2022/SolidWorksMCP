@@ -68,7 +68,7 @@
 | N26 | P2 | aicad perf 预算空闲机复验（承接四期 N23） | ai | 无（需空闲机） | 0.5h | `[!]` BLOCKED（2026-08-31 复核：SW 运行中 2 进程 + CPU 78%，空闲条件不满足——需 SW 关闭、CPU<20% 窗口；另 N27 前后两轮 631/637 全套负载下 perf 均绿，假红判断进一步加固） | |
 | N27 | P2 | 缓存命中率报表导出 CSV/JSON（H2） | ai | 无 | 2h/1晚 | `[x]` 2026-08-31（b5d26f2，637 passed；偏差：测试文件名 test_stats_export_route.py） | 2026-08-31 |
 | N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（工具 71，495+97 绿，e2e 双 PASS） | 2026-09-01 |
-| N29 | P2 | 零件长尾波2：筋/圆顶/参考几何 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
+| N29 | P2 | 零件长尾波2：筋/圆顶/参考几何 | 主 | U1 | 5h/2晚 | `[~]` 步骤1-2取证✅（2026-09-01；3/4 可达——筋 BLOCKED 走数学替代；TDD/实现待开） | |
 | N30 | P2 | 零件长尾波3：多实体 combine + 通用草图原语 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
 | N31 | P2 | CSG 契约 v2 扩 op（D5 范围随波次驱动） | 主 | U1 + N28-N30 任一完成 | 3h/1晚 | `[ ]` | |
 | N32 | P2 | BOM 气泡引线（drawing 域） | 主 | U1 | 3h/1晚 | `[ ]` 需 SW 实机 | |
@@ -197,7 +197,7 @@
 
 同 N28 的 0011 方法论，三特征族一批（支撑类零件）。
 
-- [ ] 1. 类型库取证：RibFeature（InsertRib 系，厚度/拉伸方向）、DomeFeature（InsertDome 系）、参考几何（基准面/轴 InsertRefPlane/InsertRefAxis 系——**先于筋做**：筋依赖草图面）。
+- [x] 1. 类型库取证：RibFeature（InsertRib 系，厚度/拉伸方向）、DomeFeature（InsertDome 系）、参考几何（基准面/轴 InsertRefPlane/InsertRefAxis 系——**先于筋做**：筋依赖草图面）。
 - [ ] 2. TDD：FakeModel 红→绿（含参考几何创建后被特征消费的调用序断言）。
 - [ ] 3. 实现 + 工具计数断言同步（参考几何 2 + 筋 1 + 圆顶 1 ≈ 71→75，以实际拆分为准）。
 - [ ] 4. 实机 e2e：L 型件加筋体积增量窗口断言；圆顶体积断言。
@@ -206,7 +206,11 @@
 **验收**：同 N28 口径（测试绿 + 实机窗口断言 + 计数同步 + README 同步）。
 
 **执行记录**：
-> （待回填）
+> **2026-09-01 步骤 1-2 取证（探针 `tools/probe_part/probe_n29_unblock.py`，2/3 一次命中、累计 3/4 可达）**：
+> - **基准轴 OK**：柱面 = face 走查 `GetSurface().IsCylinder` → `Select2(False,0)` → **`IModelDoc2.InsertAxis()` 零参**（dynamic 上属性语义取值即触发；InsertAxis2 带参/零参均报「非选择性的参数」不可用）。树「基准轴1」。基准面沿用 N28 `InsertRefPlane(8,dist)`——**参考几何两件套全部原生可达**。
+> - **圆顶 OK（mark=1 解锁）**：顶面 face 走查 zmin 最大 → `Select2(False, **mark=1**)`（mark=0 静默零产出）→ typed `InsertDome(height_m, False, False)` → ΔV=850.85mm³=球冠公式 0.000%。树「圆顶1」。
+> - **筋 BLOCKED（T8-mirror/pattern 同族，证据完备）**：13 变体直调全零产出（面构型×mark×RefIdx×宿主 typed-FM/dyn-FM/doc2×IsNormToSketch×方向布尔）；swFeatureNameID_e 无 Rib 项 → CreateDefinition 死路。**生产走数学替代**：筋=薄板 box 组合（如实声明非参数联动，先例 pattern/环阵）；宏录制器对照为终极路径（与 T8 两 BLOCKED 同队列）。
+> - 生产契约输入就绪：圆顶/基准轴/基准面原生三件 + 筋数学替代一件 → 步骤 2（TDD）按「参考几何创建后被圆顶消费」的调用序断言设计。
 
 ---
 
