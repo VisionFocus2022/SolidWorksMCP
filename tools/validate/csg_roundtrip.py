@@ -47,29 +47,63 @@ def build():
     return ring - bore
 '''
 
+# N31 v2 case: contract-2 polygon_prism. The plan is supplied directly
+# (the channel-B AST exporter does not parse profile+extrude pairs yet),
+# so the kernel side only contributes the ground-truth volume.
+HEX_SCRIPT = '''from build123d import *
+PARAMS = {"sides": 6, "r": 10.0, "h": 8.0}
+
+def build():
+    p = PARAMS
+    with BuildPart() as part:
+        with BuildSketch():
+            RegularPolygon(p["r"], p["sides"])
+        extrude(amount=p["h"])
+    return part.part
+'''
+
+HEX_PLAN = {
+    "version": 2,
+    "units": "mm",
+    "operations": [
+        {"op": "polygon_prism", "name": "nut", "sides": 6,
+         "circumradius": 10.0, "height": 8.0, "at": [0.0, 0.0, 0.0]},
+    ],
+}
+
+CASES = [
+    # (name, build123d script, preset plan or None=export via csg_plan_from_script)
+    ("ring_v1_export", RING_SCRIPT, None),
+    ("hex_v2_direct", HEX_SCRIPT, HEX_PLAN),
+]
+
 # Generator executed inside the aicad venv: kernel volume + CSG contract.
+# stdin: {"script": str, "plan": dict | None} — a preset plan skips the
+# exporter (v2 ops are rebuild-direction only, docs/csg-plan-v1.md §v2).
 GENERATOR = '''
 import json, sys
 sys.path.insert(0, r"{root}/aicad")
 from aicad.interop.sw_features.csg_export import csg_plan_from_script
 
-src = sys.stdin.read()
+req = json.loads(sys.stdin.read())
 ns = {{}}
-exec(src, ns)
+exec(req["script"], ns)
 shape = ns["build"]()
-plan = csg_plan_from_script(src)
+plan = req.get("plan")
+if plan is None:
+    plan = csg_plan_from_script(req["script"])
 print(json.dumps({{"kernel_volume_mm3": shape.volume, "plan": plan}}))
 '''
 
 
-def _aicad_side() -> dict:
+def _aicad_side(script: str, preset_plan) -> dict:
     """Run the generator in the aicad venv; returns its JSON payload."""
     gen_path = os.path.join(tempfile.gettempdir(), "csg_rt_gen.py")
     with open(gen_path, "w", encoding="utf-8") as fh:
         fh.write(GENERATOR.format(root=ROOT.replace("\\", "\\\\")))
     proc = subprocess.run(
         [AICAD_PY, "-X", "utf8", gen_path],
-        input=RING_SCRIPT,
+        input=json.dumps({"script": script, "plan": preset_plan}),
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -81,44 +115,30 @@ def _aicad_side() -> dict:
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
-def main() -> int:
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    report: dict = {"tool": "csg_roundtrip", "ts": datetime.now().isoformat()}
-
+def _run_case(sw, name, script, preset_plan):
+    """One aicad->SW round-trip case; returns the per-case report dict."""
+    case = {"case": name}
     try:
-        payload = _aicad_side()
+        payload = _aicad_side(script, preset_plan)
     except Exception as exc:
-        report.update({"stage": "aicad", "ok": False, "error": str(exc)})
-        _write(report)
-        return 3
+        case.update({"stage": "aicad", "ok": False, "error": str(exc)})
+        return case
 
     plan = payload["plan"]
     kernel_mm3 = float(payload["kernel_volume_mm3"])
-    report["plan"] = plan
-    report["kernel_volume_mm3"] = kernel_mm3
-
-    sw = get_solidworks_app()
-    conn = sw.connect(launch_if_needed=False)
-    if not conn.get("success"):
-        report.update({"stage": "connect", "ok": False, "error": conn.get("message")})
-        _write(report)
-        return 2
-    try:
-        sw.app.CloseAllDocuments(True)
-    except Exception:
-        pass
+    case["plan"] = plan
+    case["kernel_volume_mm3"] = kernel_mm3
 
     rebuilt = rebuild_csg_plan(sw, plan)
-    report["rebuild"] = rebuilt
+    case["rebuild"] = {k: rebuilt.get(k) for k in ("success", "message", "data")}
     if not rebuilt.get("success"):
-        report.update({"stage": "rebuild", "ok": False})
-        _write(report)
-        return 3
+        case.update({"stage": "rebuild", "ok": False})
+        return case
 
     mass = get_mass_properties(sw)
     sw_mm3 = float(mass["data"]["volume"]) * 1e9
     rel = abs(sw_mm3 - kernel_mm3) / kernel_mm3
-    report.update(
+    case.update(
         {
             "stage": "compare",
             "sw_volume_mm3": sw_mm3,
@@ -127,12 +147,42 @@ def main() -> int:
             "ok": rel <= VOLUME_TOLERANCE,
         }
     )
-    _write(report)
+    return case
+
+
+def main() -> int:
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    report = {
+        "tool": "csg_roundtrip",
+        "ts": datetime.now().isoformat(),
+        "cases": [],
+    }
+
+    sw = get_solidworks_app()
+    conn = sw.connect(launch_if_needed=False)
+    if not conn["success"]:
+        report.update({"stage": "connect", "ok": False, "error": conn.get("message")})
+        _write(report)
+        return 2
+
+    exit_code = 0
+    for name, script, preset_plan in CASES:
+        try:
+            sw.app.CloseAllDocuments(True)
+        except Exception:
+            pass
+        case = _run_case(sw, name, script, preset_plan)
+        report["cases"].append(case)
+        if not case.get("ok"):
+            exit_code = max(exit_code, 3)
+        print(f"[{name}] {'OK' if case.get('ok') else 'FAIL'} ({case.get('stage')})")
+
     try:
         sw.app.CloseAllDocuments(True)
     except Exception:
         pass
-    return 0 if report["ok"] else 1
+    _write(report)
+    return exit_code
 
 
 def _write(report: dict) -> None:

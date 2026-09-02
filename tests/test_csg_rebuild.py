@@ -46,8 +46,8 @@ class RebuildTestCase(unittest.TestCase):
         calls = Mock()
 
         def _stub(recorder, feature_name):
-            def _fn(*args):
-                recorder(*args[1:])  # drop sw_app
+            def _fn(*args, **kwargs):
+                recorder(*args[1:], **kwargs)  # drop sw_app
                 return _ok(feature_name)
             return _fn
 
@@ -57,6 +57,8 @@ class RebuildTestCase(unittest.TestCase):
             "create_cylinder_on_face": _stub(calls.cyl_face, "凸台-拉伸3"),
             "create_cone": _stub(calls.cone, "凸台-拉伸4"),
             "create_cone_on_face": _stub(calls.cone_face, "凸台-拉伸5"),
+            "create_polygon": _stub(calls.poly, "凸台-拉伸6"),
+            "create_swept": _stub(calls.swept, "扫描1"),
         }
         mapping.update(overrides)
         for name, fn in mapping.items():
@@ -180,7 +182,7 @@ class TestValidation(RebuildTestCase):
         self.assertIn(fragment, result["message"])
 
     def test_rejects_bad_version_units_and_shape(self):
-        self._assert_invalid({"version": 2, "units": "mm", "operations": []}, "version")
+        self._assert_invalid({"version": 3, "units": "mm", "operations": []}, "version")
         self._assert_invalid({"version": 1, "units": "inch", "operations": []}, "units")
         self._assert_invalid({"version": 1, "units": "mm", "operations": []}, "operations")
         self._assert_invalid("not-a-dict", "dict")
@@ -461,3 +463,114 @@ class TestStackedPrimitives(unittest.TestCase):
             result = part_api.create_cylinder_on_face(self.sw, 20.0, 30.0)
         self.assertFalse(result["success"])
         self.assertIn("Stacked extrusion", result["message"])
+
+
+class CsgV2TestCase(RebuildTestCase):
+    """N31: contract v2 first-op ops — polygon_prism and swept_arc.
+
+    v2 keeps every v1 op verbatim and adds two first-op-only solids
+    (docs/csg-plan-v1.md §v2): polygon_prism stacks (top face is flat);
+    swept_arc admits nothing after it (no axis to stack on)."""
+
+    HEX = {
+        "version": 2,
+        "units": "mm",
+        "operations": [
+            {"op": "polygon_prism", "name": "nut", "sides": 6,
+             "circumradius": 10.0, "height": 8.0, "at": [0, 0, 0]},
+            {"op": "cylinder", "name": "boss", "diameter": 6, "height": 5,
+             "at": [0, 0, 8]},
+            {"op": "cut_cylinder", "name": "bore", "diameter": 4,
+             "depth": None, "through": True, "at": [0, 0, 0]},
+        ],
+    }
+    ARC = {
+        "version": 2,
+        "units": "mm",
+        "operations": [
+            {"op": "swept_arc", "name": "handle", "diameter": 10.0,
+             "arc_radius": 20.0, "angle_deg": 90.0, "at": [0, 0, 0]},
+        ],
+    }
+
+    def test_v2_polygon_prism_dispatch_and_stacking(self):
+        calls = self._patches()
+        result = rebuild_csg_plan(self.sw, self.HEX)
+        self.assertTrue(result["success"], result)
+        # polygon first op: sides/circumradius/height/inscribed default True
+        self.assertEqual(calls.poly.call_count, 1)
+        args = calls.poly.call_args
+        self.assertEqual(args[0], (6, 10.0, 8.0))
+        self.assertTrue(args[1]["inscribed"])
+        # cylinder stacked on the hexagon top (z=8) via the on-face builder
+        self.assertEqual(calls.cyl_face.call_count, 1)
+        self.assertEqual(
+            result["data"]["applied"], ["nut", "boss", "bore"]
+        )
+        self.assertEqual(result["data"]["stack_top_mm"], 13.0)
+
+    def test_v2_swept_arc_dispatch(self):
+        calls = self._patches()
+        result = rebuild_csg_plan(self.sw, self.ARC)
+        self.assertTrue(result["success"], result)
+        self.assertEqual(calls.swept.call_count, 1)
+        self.assertEqual(
+            calls.swept.call_args.args, (10.0, "arc", 20.0, 90.0)
+        )
+        self.assertEqual(result["data"]["applied"], ["handle"])
+
+    def test_v2_ops_rejected_in_v1_plans(self):
+        plan = {
+            "version": 1,
+            "units": "mm",
+            "operations": [self.HEX["operations"][0]],
+        }
+        result = rebuild_csg_plan(self.sw, plan)
+        self.assertFalse(result["success"])
+        self.assertIn("version 2", result["message"])
+
+    def test_v2_first_op_only_rules(self):
+        # polygon/swept as a non-first op is rejected
+        plan = {
+            "version": 2,
+            "units": "mm",
+            "operations": [
+                {"op": "box", "name": "base", "size": [10, 10, 5],
+                 "at": [0, 0, 0]},
+                {"op": "polygon_prism", "name": "nut", "sides": 6,
+                 "circumradius": 8.0, "height": 4.0, "at": [0, 0, 5]},
+            ],
+        }
+        result = rebuild_csg_plan(self.sw, plan)
+        self.assertFalse(result["success"])
+        self.assertIn("first", result["message"])
+
+    def test_v2_nothing_stacks_on_swept_arc(self):
+        plan = {
+            "version": 2,
+            "units": "mm",
+            "operations": [
+                self.ARC["operations"][0],
+                {"op": "cylinder", "name": "boss", "diameter": 5,
+                 "height": 5, "at": [0, 0, 0]},
+            ],
+        }
+        result = rebuild_csg_plan(self.sw, plan)
+        self.assertFalse(result["success"])
+
+    def test_v2_field_validation(self):
+        bad_ops = [
+            {"op": "polygon_prism", "name": "n", "sides": 2,
+             "circumradius": 8, "height": 4, "at": [0, 0, 0]},
+            {"op": "polygon_prism", "name": "n", "sides": 6,
+             "circumradius": 0, "height": 4, "at": [0, 0, 0]},
+            {"op": "swept_arc", "name": "h", "diameter": 10,
+             "arc_radius": 20, "angle_deg": 0, "at": [0, 0, 0]},
+            {"op": "swept_arc", "name": "h", "diameter": -1,
+             "arc_radius": 20, "angle_deg": 90, "at": [0, 0, 0]},
+        ]
+        for op in bad_ops:
+            plan = {"version": 2, "units": "mm", "operations": [op]}
+            result = rebuild_csg_plan(self.sw, plan)
+            self.assertFalse(result["success"], op)
+            self.assertEqual(result["error"]["code"], "INVALID_PARAMETER", op)

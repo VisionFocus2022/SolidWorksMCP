@@ -59,3 +59,21 @@
 - `at.x/at.y` 非零的实体偏移（需草图偏移或参考几何）；
 - 更多 op：cut_box / revolve / pattern / fillet；
 - 单位换算（v1 锁 mm，与 MCP 工具约定一致）。
+
+## v2 增补（2026-09-01，N31）：两个首建 op
+
+v2 完全保留 v1 语义与 4 op；新增两个**只能作为首操作**的实体 op（`version: 2`；v1 计划中出现它们报错）：
+
+```json
+{"op": "polygon_prism", "name": "nut", "sides": 6, "circumradius": 10.0,
+ "height": 8.0, "inscribed": true, "at": [0, 0, 0]}
+{"op": "swept_arc", "name": "handle", "diameter": 10.0, "arc_radius": 20.0,
+ "angle_deg": 90.0, "at": [0, 0, 0]}
+```
+
+| op | 字段 | 语义 |
+|---|---|---|
+| `polygon_prism` | `sides`（int 3-60）/ `circumradius` / `height` / `inscribed`（默认 true） | 正 N 边棱柱，体积 N/2·R²·sin(2π/N)·h；顶面为平面，**后续 cylinder/cone 可照常堆叠**（stack top = height） |
+| `swept_arc` | `diameter` / `arc_radius` / `angle_deg`（默认 90） | 圆截面沿圆弧路径扫描（torus 段），体积 π(d/2)²·R·θ；**无堆叠轴——只允许作为唯一操作** |
+
+**方向边界（诚实声明）**：v2 两 op 仅支持 **SW 重建方向**（`solidworks_features_rebuild_csg`）。aicad 导出方向（`to_csg_plan_v1`）仍只产 v1 4-op——通道 B 的 AST 识别器认 Box/Cylinder/Cone 构造节点，polygon=profile+extrude 两步的识别属后续扩展。互证（N31）：`tools/validate/csg_roundtrip.py` 双案例——v1 ring（导出器→重建）+ v2 hexagon（脚本直连：build123d `RegularPolygonRadius`+extrude 与 SW `create_polygon` 各自建模，体积互差 ±1%）。

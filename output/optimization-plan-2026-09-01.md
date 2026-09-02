@@ -70,7 +70,7 @@
 | N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（工具 71，495+97 绿，e2e 双 PASS） | 2026-09-01 |
 | N29 | P2 | 零件长尾波2：筋/圆顶/参考几何 | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（3/4 原生+筋数学替代；工具 71→75；510+101 绿；e2e 4/4 PASS 双 0.000%） | 2026-09-01 |
 | N30 | P2 | 零件长尾波3：多实体 combine + 通用草图原语 | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（**偏差**：combine BLOCKED 9+ 变体→数学替代=Merge 挤出已有；样条延后；落地 polygon+slot，77/79，518+103 绿，e2e 双 0.000%） | 2026-09-01 |
-| N31 | P2 | CSG 契约 v2 扩 op（D5 范围随波次驱动） | 主 | U1 + N28-N30 任一完成 | 3h/1晚 | `[ ]` | |
+| N31 | P2 | CSG 契约 v2 扩 op（D5 范围随波次驱动） | 主 | U1 + N28-N30 任一完成 | 3h/1晚 | `[x]` 2026-09-01（v2=polygon_prism+swept_arc 仅重建方向；互证 ring 2.9e-16 / hex **0.0**；524+103 绿） | 2026-09-01 |
 | N32 | P2 | BOM 气泡引线（drawing 域） | 主 | U1 | 3h/1晚 | `[ ]` 需 SW 实机 | |
 | N33 | P2 | 爆炸图（assembly 域 + 图纸投影） | 主 | U1 | 4h/2晚 | `[ ]` 需 SW 实机 | |
 | N34 | P2 | aicad 前端冒烟测试（React/three.js 零测试兜底） | ai | U2 | 4h/2晚 | `[ ]` | |
@@ -243,16 +243,20 @@
 
 **目标**：跨引擎可迁移集从 v1 的 4-op（box/cylinder/hole/cut_hole）扩容，范围按 N28-N30 已落地特征驱动（决策 D5：装饰 fillet/chamfer → 阵列 → 螺纹，按评测集失败样本优先）。
 
-- [ ] 1. **范围裁决**：读 N28-N30 执行记录，选已实机验证 ≥1 轮的特征族进 v2 首批；评测集失败样本（aicad 评测框架 10 任务）交叉验证优先级。
-- [ ] 2. **TDD（0012 契约+互证模式）**：契约 schema 扩 op → 跨引擎（SW 主仓 ↔ build123d 沙箱）往返体积互证测试先行红。
-- [ ] 3. 实现：主仓侧 op 路由 + aicad 侧 CSG 导出路由扩容（先例 aicad `90c6a5a`）；双仓分别提交。
-- [ ] 4. 跨引擎往返互证绿 + 双仓全套绿；ADR-0012 追加 v2 范围记录。
-- [ ] 5. 回填本文件状态与执行记录。
+- [x] 1. **范围裁决**：读 N28-N30 执行记录，选已实机验证 ≥1 轮的特征族进 v2 首批；评测集失败样本（aicad 评测框架 10 任务）交叉验证优先级。（**裁决**：polygon_prism（N30 实机 0.000%）+ swept_arc（N28 实机精确）——均为独立实体 op 契合 v1 堆叠语义、体积解析可互证；D5 原列的装饰/阵列/螺纹为「面上修饰」类，堆叠语义不匹配，留 v3）
+- [x] 2. **TDD（0012 契约+互证模式）**：契约 schema 扩 op → 跨引擎（SW 主仓 ↔ build123d 沙箱）往返体积互证测试先行红。（CsgV2TestCase 6 用例 RED→GREEN：dispatch/堆叠/版本门/首建限定/字段校验）
+- [x] 3. 实现：主仓侧 op 路由 + aicad 侧 CSG 导出路由扩容（先例 aicad `90c6a5a`）；双仓分别提交。（**偏差**：aicad 导出方向延后——通道 B AST 识别器认 Box/Cylinder/Cone 构造节点，polygon=profile+extrude 两步识别属后续扩展，v2 如实声明「仅重建方向」；aicad 侧落地契约副本同步 `756be1c`）
+- [x] 4. 跨引擎往返互证绿 + 双仓全套绿；ADR-0012 追加 v2 范围记录。（roundtrip 双案例：ring_v1 rel_diff=2.9e-16、hex_v2 rel_diff=**0.0** 逐位一致；主仓 524+103 绿）
+- [x] 5. 回填本文件状态与执行记录。
 
 **验收**：新增 op 在两引擎各自建模后往返体积互差在容差内；契约测试锁死；ADR-0012 更新。
 
 **执行记录**：
-> （待回填）
+> **2026-09-01 完成（一轮）**：
+> - 主仓：design.py CSG v2（version 1/2 双门；`polygon_prism` 首建+可堆叠、`swept_arc` 唯一操作——无堆叠轴如实拒绝后续 op）；测试 +6（CsgV2TestCase，含老用例 version 2→3 迁移）；契约文档 §v2（字段表+方向边界声明）；roundtrip 工具改多案例（ring_v1 导出回归 + hex_v2 脚本直连：generator 接 preset_plan 跳过导出器）。
+> - build123d 坑：API 名是 `RegularPolygon`（RegularPolygonRadius 不存在，NameError）；其 radius 默认 major_radius=True=外接圆，与 SW create_polygon inscribed=True **语义对齐**（hex_v2 互证 0.0 佐证）。
+> - 互证精度：ring 2.9e-16（机器精度）+ hex **0.0**（跨引擎逐位一致，0012 互证方法论第三次生效、精度新高）。
+> - 双仓提交：主仓（本批）+ aicad `756be1c`（契约副本）。ADR-0012（csg-cross-engine-and-registry-split.md）增补 N31 段。
 
 ---
 

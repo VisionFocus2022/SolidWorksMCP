@@ -792,7 +792,8 @@ def _delete_new_features(
 # --- T16: cross-engine CSG rebuild (contract v1, docs/csg-plan-v1.md) ---
 
 CSG_VERSION = 1
-CSG_OPS = ("box", "cylinder", "cone", "cut_cylinder")
+CSG_V2_OPS = ("polygon_prism", "swept_arc")
+CSG_OPS = ("box", "cylinder", "cone", "cut_cylinder") + CSG_V2_OPS
 _Z_TOLERANCE = 1e-6
 
 
@@ -800,9 +801,9 @@ def _validate_csg_plan(plan: Any) -> Optional[str]:
     """Manual contract validation; returns the first problem or None."""
     if not isinstance(plan, dict):
         return "plan must be a dict"
-    if plan.get("version") != CSG_VERSION:
-        return (f"unsupported plan version {plan.get('version')!r} "
-                f"(expected {CSG_VERSION})")
+    version = plan.get("version")
+    if version not in (1, 2):
+        return (f"unsupported plan version {version!r} (expected 1 or 2)")
     if plan.get("units") != "mm":
         return "units must be 'mm'"
     ops = plan.get("operations")
@@ -816,6 +817,9 @@ def _validate_csg_plan(plan: Any) -> Optional[str]:
         if kind not in CSG_OPS:
             return (f"operation[{index}]: unknown op {kind!r} "
                     f"(supported: {', '.join(CSG_OPS)})")
+        if kind in CSG_V2_OPS and version != 2:
+            return (f"operation[{index}]: {kind} requires version 2 "
+                    f"(plan is version {version})")
         name = op.get("name")
         if not isinstance(name, str) or not name:
             return f"operation[{index}]: name must be a non-empty string"
@@ -858,7 +862,7 @@ def _validate_csg_plan(plan: Any) -> Optional[str]:
             )
             if problem:
                 return problem
-        else:  # cut_cylinder
+        elif kind == "cut_cylinder":
             problem = _positive("diameter")
             if problem:
                 return problem
@@ -871,6 +875,30 @@ def _validate_csg_plan(plan: Any) -> Optional[str]:
             if depth is None and not op.get("through"):
                 return ("operation[{index}]: cut_cylinder needs depth or "
                         "through=true")
+        if kind == "polygon_prism":
+            sides = op.get("sides")
+            if (
+                not isinstance(sides, int)
+                or isinstance(sides, bool)
+                or not 3 <= sides <= 60
+            ):
+                return (f"operation[{index}]: polygon_prism sides must be "
+                        f"an integer in [3, 60]")
+            problem = _positive("circumradius") or _positive("height")
+            if problem:
+                return problem
+            inscribed = op.get("inscribed", True)
+            if not isinstance(inscribed, bool):
+                return (f"operation[{index}]: polygon_prism inscribed must "
+                        f"be a boolean")
+        elif kind == "swept_arc":
+            problem = _positive("diameter") or _positive("arc_radius")
+            if problem:
+                return problem
+            angle = op.get("angle_deg", 90.0)
+            if not isinstance(angle, (int, float)) or not 0 < angle <= 360:
+                return (f"operation[{index}]: swept_arc angle_deg must be in "
+                        f"(0, 360]")
     return None
 
 
@@ -902,7 +930,7 @@ def rebuild_csg_plan(sw_app: SolidWorksApp, plan: dict) -> dict:
         before = _snapshot_feature_names(model)
 
         applied = []
-        stack_top = 0.0
+        stack_top = 0.0  # None after swept_arc: nothing stacks on it
 
         def _fail(result):
             rolled_back, warning = _delete_new_features(sw_app, before)
@@ -935,7 +963,47 @@ def rebuild_csg_plan(sw_app: SolidWorksApp, plan: dict) -> dict:
                 if not result.get("success"):
                     return _fail(result)
                 stack_top = height
+            elif kind in CSG_V2_OPS:
+                if index != 0 or abs(x) > 1e-9 or abs(y) > 1e-9 or abs(z) > 1e-9:
+                    return error_response(
+                        f"operation[{index}]: v2 {kind} is a first op only "
+                        "at [0, 0, 0]",
+                        code="INVALID_PARAMETER",
+                    )
+                if kind == "polygon_prism":
+                    result = part_module.create_polygon(
+                        sw_app,
+                        op["sides"],
+                        float(op["circumradius"]),
+                        float(op["height"]),
+                        inscribed=op.get("inscribed", True),
+                    )
+                    if not result.get("success"):
+                        return _fail(result)
+                    stack_top = float(op["height"])
+                else:  # swept_arc: a torus segment has no stacking axis
+                    if len(plan["operations"]) != 1:
+                        return error_response(
+                            f"operation[{index}]: swept_arc admits no "
+                            "following operations (no stacking axis)",
+                            code="INVALID_PARAMETER",
+                        )
+                    result = part_module.create_swept(
+                        sw_app,
+                        float(op["diameter"]),
+                        "arc",
+                        float(op["arc_radius"]),
+                        float(op.get("angle_deg", 90.0)),
+                    )
+                    if not result.get("success"):
+                        return _fail(result)
+                    stack_top = None
             elif kind in ("cylinder", "cone"):
+                if stack_top is None:
+                    return error_response(
+                        f"operation[{index}]: nothing stacks on a swept_arc",
+                        code="INVALID_PARAMETER",
+                    )
                 if abs(x) > 1e-9 or abs(y) > 1e-9:
                     return error_response(
                         f"operation[{index}]: v1 stacks solids on the axis "
@@ -972,6 +1040,12 @@ def rebuild_csg_plan(sw_app: SolidWorksApp, plan: dict) -> dict:
                     return _fail(result)
                 stack_top = z + float(op["height"])
             else:  # cut_cylinder
+                if stack_top is None:
+                    return error_response(
+                        f"operation[{index}]: cut_cylinder needs a stack "
+                        "top (nothing follows a swept_arc)",
+                        code="INVALID_PARAMETER",
+                    )
                 result = cut_round_hole(
                     sw_app,
                     op["diameter"],
@@ -996,12 +1070,14 @@ def rebuild_csg_plan(sw_app: SolidWorksApp, plan: dict) -> dict:
             data={
                 "applied": applied,
                 "feature_count": len(applied),
-                "stack_top_mm": round(stack_top, 6),
+                "stack_top_mm": (
+                    round(stack_top, 6) if stack_top is not None else None
+                ),
                 "rolled_back": False,
             },
             message=(
-                f"Rebuilt {len(applied)} CSG features "
-                f"(stack top {round(stack_top, 3)}mm)"
+                f"Rebuilt {len(applied)} CSG features (stack top "
+                f"{round(stack_top, 3) if stack_top is not None else 'n/a'}mm)"
             ),
         )
     except SolidWorksNotRunningError as exc:
