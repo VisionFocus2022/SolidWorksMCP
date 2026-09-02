@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import os
 from typing import Iterable, Optional
@@ -16,6 +17,22 @@ logger = logging.getLogger(__name__)
 DEFAULT_ALLOWED_ROOT = os.path.normpath(get_config().allowed_root)
 
 
+def _expand_long_path(path: str) -> str:
+    """Expand 8.3 short-name segments (PROGRA~1) back to long names.
+
+    On some hosts (GitHub-hosted runners) realpath resolves to the 8.3
+    form of existing directories (RUNNER~1), which breaks equality with
+    caller-supplied long-name paths and the allowed root. Only valid for
+    existing paths; anything else returns the input unchanged.
+    """
+    try:
+        buffer = ctypes.create_unicode_buffer(len(path) + 260)
+        result = ctypes.windll.kernel32.GetLongPathNameW(path, buffer, len(buffer))
+        return buffer.value if result else path
+    except Exception:  # noqa: BLE001 —— non-Windows / kernel32 missing: no-op
+        return path
+
+
 def normalize_path(path: str) -> str:
     """Normalize an absolute path, resolving links/junctions with OS semantics.
 
@@ -24,11 +41,12 @@ def normalize_path(path: str) -> str:
     ``_getfinalpathname`` resolves junctions the way the file system does),
     and ``..`` pops the already-canonical prefix. This prevents
     ``root\\link\\..\\out`` from folding to ``root\\out`` when ``link``
-    actually points outside the root.
+    actually points outside the root. Existing components are additionally
+    expanded from 8.3 short names (see ``_expand_long_path``).
     """
     expanded = os.path.expanduser(path)
     if os.path.lexists(expanded):
-        return os.path.normpath(os.path.realpath(expanded))
+        return _expand_long_path(os.path.normpath(os.path.realpath(expanded)))
     if not os.path.isabs(expanded):
         expanded = os.getcwd() + os.sep + expanded
     drive, rest = os.path.splitdrive(expanded)
@@ -44,7 +62,7 @@ def normalize_path(path: str) -> str:
         candidate = drive + os.sep + os.sep.join(parts)
         if os.path.lexists(candidate):
             canonical_drive, canonical_rest = os.path.splitdrive(
-                os.path.realpath(candidate)
+                _expand_long_path(os.path.realpath(candidate))
             )
             drive = canonical_drive or drive
             parts = [p for p in canonical_rest.split(os.sep) if p not in ("", ".")]

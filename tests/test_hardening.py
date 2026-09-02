@@ -242,3 +242,38 @@ class TestVersionDrivenTemplates(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNormalizeExpands8_3ShortNames(unittest.TestCase):
+    """GitHub-hosted runners resolve realpath to 8.3 short names (RUNNER~1)
+    for the temp profile; the CI first run (33582839316) failed on exactly
+    that. normalize_path must expand existing components back to long
+    names, so allowed-root containment cannot be bypassed by short-name
+    drift (N24 fix batch)."""
+
+    def test_existing_whole_path_short_name_is_expanded(self):
+        # Simulate the runner: realpath yields the 8.3 form of an existing
+        # path (PROGRA~1 really exists here, so the expansion is real).
+        with patch(
+            "os.path.realpath", return_value=r"C:\PROGRA~1"
+        ):
+            normalized = normalize_path(r"C:\Program Files")
+        self.assertEqual(normalized, r"C:\Program Files")
+        self.assertNotIn("~", normalized)
+
+    def test_component_short_name_is_expanded_for_nonexistent_tail(self):
+        target = r"C:\Program Files\deeply\nested\new.sldprt"
+        realpath_calls = []
+
+        def fake_realpath(p):
+            realpath_calls.append(p)
+            # First existing component canonicalizes to its short form
+            if p == r"C:\Program Files":
+                return r"C:\PROGRA~1"
+            return p
+
+        with patch("os.path.realpath", side_effect=fake_realpath):
+            normalized = normalize_path(target)
+        self.assertEqual(normalized, target)
+        self.assertNotIn("~", normalized)
+        self.assertTrue(realpath_calls)
