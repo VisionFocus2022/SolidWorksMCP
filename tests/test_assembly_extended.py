@@ -575,7 +575,9 @@ class TestT11ErrorBranches(unittest.TestCase):
         result = add_component(sw, "locked.sldprt")
         self.assertFalse(result["success"])
         self.assertIn("AddComponent4 requires", result["message"])
-        get_asm.assert_not_called()
+        # N32 fix: the assembly is now resolved BEFORE the pre-open (the
+        # pre-open switches the active document), so this call is expected.
+        get_asm.assert_called_once()
 
     def test_check_interference_detector_missing(self):
         class NoDetectorAsm(FakeAsmDoc):

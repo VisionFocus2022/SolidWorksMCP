@@ -205,11 +205,16 @@ def add_component(
         x = finite_number("x", x)
         y = finite_number("y", y)
         z = finite_number("z", z)
+        # Grab the assembly BEFORE pre-opening the component: OpenDoc6
+        # switches the active document to the part, so resolving the
+        # assembly afterwards would create a NEW empty assembly every call
+        # and the component would land in the wrong document (real-machine
+        # two-component probe, N32 — components silently vanished).
+        model = _get_or_create_assembly(sw_app)
         was_open = _document_is_open(sw_app, file_path)
         preopen_error = _preopen_component_document(sw_app, file_path)
         if preopen_error:
             return error_response(preopen_error, code="SW_API_ERROR")
-        model = _get_or_create_assembly(sw_app)
         # AddComponent4(path, configName, x, y, z)
         component = model.AddComponent4(file_path, config_name, x / 1000.0, y / 1000.0, z / 1000.0)
         if component is None:
@@ -221,6 +226,13 @@ def add_component(
             if not was_open:
                 _close_preopened_component(sw_app, file_path)
             return error_response(f"Failed to add component: {file_path}")
+
+        # The pre-open switched the active document to the part; switch
+        # back so subsequent tools act on the assembly (best-effort).
+        try:
+            sw_app.app.ActivateDoc3(model.GetTitle, True, 0, 0)
+        except Exception:  # noqa: BLE001 —— 激活失败不掩盖成功的插入
+            logger.debug("ActivateDoc3 back to assembly failed", exc_info=True)
 
         return success_response(
             data={
