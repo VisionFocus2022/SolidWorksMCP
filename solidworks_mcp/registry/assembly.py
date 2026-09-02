@@ -9,6 +9,7 @@ from solidworks_mcp.solidworks_api.assembly import (
     add_mate,
     check_interference,
     delete_mate,
+    explode,
     get_bom,
     get_components,
     move_component,
@@ -139,6 +140,13 @@ def solidworks_assembly_rotate_component(
     )
 
 
+def solidworks_assembly_explode(
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Create an automatic exploded view on the active assembly and switch to it."""
+    return _call_connected(explode, launch_if_needed)
+
+
 def register(mcp) -> None:
     mcp.tool(
         title="New assembly", annotations=STATE_CHANGE, structured_output=True
@@ -171,3 +179,8 @@ def register(mcp) -> None:
     mcp.tool(
         title="Rotate component", annotations=STATE_CHANGE, structured_output=True
     )(solidworks_assembly_rotate_component)
+    mcp.tool(
+        title="Create exploded view",
+        annotations=STATE_CHANGE,
+        structured_output=True,
+    )(solidworks_assembly_explode)

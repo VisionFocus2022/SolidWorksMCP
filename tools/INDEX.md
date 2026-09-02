@@ -24,6 +24,7 @@
 | probe_n28_unblock.py | loft/sweep 实机收敛 | **2/2 一次收敛**：sweep=路径草图 mark4+Alignment=False+typed fm.InsertProtrusionSwept4（20 参 CircularProfile=True 免轮廓，⌀10×R20 弧 2467.40 精确）；loft=剖面 mark1 累加+typed doc2.InsertProtrusionBlend2(False×3)（14922.04，±1% 窗口）；**修正步骤1误报：SW 放样叫 Blend（swFmBlend=9），直接 API 存在**；基准面=fm.InsertRefPlane(8,dist)（N29 数据点）；弧=ISketchManager.CreateArc 10 参（CreateArc2 属 ModelDoc） | N28 |
 | probe_n9_unblock.py | mirror/draft/pattern/螺纹解锁 | 13 轮收敛 3/4：mirror=InsertMirrorFeature2(...,ScopeOptions=0)+基准面 mark2；draft=typed FM InsertMultiFaceDraft+拔模面 mark1 先中性面 mark2 后；thread=helix REFERENCECURVES mark4+InsertCutSwept5(**Alignment=False**)+CircularProfile；pattern BLOCKED（直调全组合零产出/AccessSelections serverfault/属性 put 编组崩）→生产走数学替代；typed FM 铁律+call_or_value 方法/属性二义 | N9 |
 
+| probe_n33_explode.py | 爆炸视图全链 | **AutoExplode 一次通过**（typed 零参=dynamic 属性语义；count=1「爆炸视图1」）；图纸投影=CreateDrawViewFromModelView3 第 2 参**空串**可行（「爆炸视图1」/「默认」名被拒——爆炸视图非配置名）；AddExplodeStep 4 参手工步进未走（v1 自动）；**爆炸态图纸投影留观察项** | N33 |
 ## probe_assembly/ — 装配域
 
 | 脚本 | 验证对象 | 有效结论 | 任务 |

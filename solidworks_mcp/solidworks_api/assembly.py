@@ -908,3 +908,61 @@ def get_bom(sw_app: SolidWorksApp) -> dict:
     except Exception as exc:
         logger.exception("Failed to get BOM")
         return error_response(f"Failed to get BOM: {exc}")
+
+
+def explode(sw_app: SolidWorksApp) -> dict:
+    """Create an automatic exploded view on the active assembly.
+
+    Real-machine contract (N33 probe): typed IAssemblyDoc.AutoExplode is
+    zero-arg (it fires via property semantics on dynamic dispatch) and
+    builds an automatic exploded view; GetExplodedViewCount/Names read it
+    back and ShowExploded(True) switches the display state. Manual
+    per-component steps (AddExplodeStep) are a future extension; the
+    exploded state as a drawing projection is an observed follow-up."""
+    from win32com.client import gencache
+
+    try:
+        model = sw_app.get_active_document()
+        if model is None or call_or_value(model, "GetType") != swDocASSEMBLY:
+            return error_response("No active assembly document")
+
+        mods = gencache.GetModuleForProgID("SldWorks.Application")
+        raw = getattr(model, "_oleobj_", None)
+        asm_doc = mods.IAssemblyDoc(raw) if mods and raw else model
+
+        done = call_or_value(asm_doc, "AutoExplode")  # property semantics
+        if done is not True:
+            try:
+                done = asm_doc.AutoExplode()
+            except Exception as exc:  # noqa: BLE001
+                return error_response(f"AutoExplode rejected ({exc})", code="SW_API_ERROR")
+        if done is not True:
+            return error_response("Explode rejected", code="SW_API_ERROR")
+
+        count = asm_doc.GetExplodedViewCount()
+        names = asm_doc.GetExplodedViewNames()
+        if isinstance(names, str):
+            names = (names,)
+        views = list(names or ())
+        if not isinstance(count, int) or count < 1 or not views:
+            return error_response(
+                "AutoExplode returned success but no exploded view exists",
+                code="SW_API_ERROR",
+            )
+        try:
+            asm_doc.ShowExploded(True)
+        except Exception:  # noqa: BLE001 —— 显示态切换失败不掩盖视图创建
+            logger.debug("ShowExploded(True) failed", exc_info=True)
+
+        return success_response(
+            data={"explode_views": views, "count": count},
+            message=(
+                f"Created exploded view(s): {', '.join(views)} "
+                "(automatic layout; display switched to exploded)"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Failed to explode assembly")
+        return error_response(f"Failed to explode assembly: {exc}")
