@@ -100,6 +100,59 @@ def apply_fillet(
         return error_response(f"Failed to apply fillet: {exc}")
 
 
+def apply_dome(
+    sw_app: SolidWorksApp,
+    face_name: str,
+    height_mm: float,
+) -> dict:
+    """Raise a dome on the named face.
+
+    Real-machine contract (N29 probe): Select2 with mark=1 is the
+    unlock — mark=0 is silently ignored; the call is typed
+    IModelDoc2.InsertDome(height, ReverseDir, DoEllipticSurface) (the
+    dynamic dispatch form marshals broken), and the tree diff is the
+    verdict (⌀20 top + 5mm dome → 850.85mm³, exact spherical cap)."""
+    from solidworks_mcp.solidworks_api.part import _typed_doc2
+
+    try:
+        height_mm = positive_number("height_mm", height_mm)
+        if not face_name:
+            return error_response("face_name must be non-empty", code="INVALID_PARAMETER")
+
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+
+        selected, missing = _select_named_faces(model, [face_name])
+        if missing:
+            return error_response(
+                f"Face(s) not found: {', '.join(missing)}",
+                code="INVALID_PARAMETER",
+            )
+
+        before = latest_feature_name(model)
+        _typed_doc2(model).InsertDome(mm_to_m(height_mm), False, False)
+        after = latest_feature_name(model)
+        if after == before:
+            return error_response(
+                f"SolidWorks rejected the dome (height {height_mm}mm on "
+                f"{face_name})",
+                code="SW_API_ERROR",
+            )
+
+        return success_response(
+            data={"feature_name": after, "faces": [face_name]},
+            message=f"Applied {height_mm}mm dome to {face_name}: {after}",
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to apply dome")
+        return error_response(f"Failed to apply dome: {exc}")
+
+
 def apply_shell(
     sw_app: SolidWorksApp,
     face_names: Sequence[str],

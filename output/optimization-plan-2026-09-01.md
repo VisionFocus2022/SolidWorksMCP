@@ -51,7 +51,7 @@
 6. **节奏**：每晚 1 个任务为宜，最多 2 个（第二个必须 ≤2h 小任务）。
 7. **安全红线**（继承）：COM 调用必须经 `run_com(...)`；文件操作在 `allowed_root` 内；破坏性工具标 `DESTRUCTIVE`；MCP 入参 mm、COM 层 m；主仓覆盖率 ≥89%（CI 硬门 80% 不得降）；perf 断言禁放宽。
 8. **测试命令基线**：
-   - 主仓库：`venv\Scripts\python.exe -m pytest tests/ -q` → 基线 **495 passed + 97 subtests，约 10s**（2026-09-01，N28 后；此前 485+95；71 工具 5 处断言钉死）；
+   - 主仓库：`venv\Scripts\python.exe -m pytest tests/ -q` → 基线 **510 passed + 101 subtests，约 11s**（2026-09-01，N29 后；此前 N28=495+97、N19=485+95；75 工具 5 处断言钉死）；
    - aicad 仓库（在 aicad/ 内）：`venv\Scripts\python.exe -m pytest tests -q` → **637 passed**（2026-08-31 N27 后，两轮绿；此前基线 631；perf 负载下绿，严格空闲条件未验=N26）；
    - 实机 e2e：`venv\Scripts\python.exe tools\e2e_sw_smoke.py`（需 SW 运行）。
 9. **中断恢复**：读到未勾选步骤继续；已勾选产物未提交则先补提交。以 `git status`/`git log` 实时状态为准，勿信旧快照。
@@ -68,7 +68,7 @@
 | N26 | P2 | aicad perf 预算空闲机复验（承接四期 N23） | ai | 无（需空闲机） | 0.5h | `[!]` BLOCKED（2026-08-31 复核：SW 运行中 2 进程 + CPU 78%，空闲条件不满足——需 SW 关闭、CPU<20% 窗口；另 N27 前后两轮 631/637 全套负载下 perf 均绿，假红判断进一步加固） | |
 | N27 | P2 | 缓存命中率报表导出 CSV/JSON（H2） | ai | 无 | 2h/1晚 | `[x]` 2026-08-31（b5d26f2，637 passed；偏差：测试文件名 test_stats_export_route.py） | 2026-08-31 |
 | N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（工具 71，495+97 绿，e2e 双 PASS） | 2026-09-01 |
-| N29 | P2 | 零件长尾波2：筋/圆顶/参考几何 | 主 | U1 | 5h/2晚 | `[~]` 步骤1-2取证✅（2026-09-01；3/4 可达——筋 BLOCKED 走数学替代；TDD/实现待开） | |
+| N29 | P2 | 零件长尾波2：筋/圆顶/参考几何 | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（3/4 原生+筋数学替代；工具 71→75；510+101 绿；e2e 4/4 PASS 双 0.000%） | 2026-09-01 |
 | N30 | P2 | 零件长尾波3：多实体 combine + 通用草图原语 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
 | N31 | P2 | CSG 契约 v2 扩 op（D5 范围随波次驱动） | 主 | U1 + N28-N30 任一完成 | 3h/1晚 | `[ ]` | |
 | N32 | P2 | BOM 气泡引线（drawing 域） | 主 | U1 | 3h/1晚 | `[ ]` 需 SW 实机 | |
@@ -198,10 +198,10 @@
 同 N28 的 0011 方法论，三特征族一批（支撑类零件）。
 
 - [x] 1. 类型库取证：RibFeature（InsertRib 系，厚度/拉伸方向）、DomeFeature（InsertDome 系）、参考几何（基准面/轴 InsertRefPlane/InsertRefAxis 系——**先于筋做**：筋依赖草图面）。
-- [ ] 2. TDD：FakeModel 红→绿（含参考几何创建后被特征消费的调用序断言）。
-- [ ] 3. 实现 + 工具计数断言同步（参考几何 2 + 筋 1 + 圆顶 1 ≈ 71→75，以实际拆分为准）。
-- [ ] 4. 实机 e2e：L 型件加筋体积增量窗口断言；圆顶体积断言。
-- [ ] 5. 全套绿 + 提交；回填状态与执行记录。
+- [x] 2. TDD：FakeModel 红→绿（含参考几何创建后被特征消费的调用序断言）。（tests/test_part_refgeom.py 15 用例：RED 15 failed → GREEN 15 passed）
+- [x] 3. 实现 + 工具计数断言同步（参考几何 2 + 筋 1 + 圆顶 1 = 71→75；5 处断言 71→75/73→77；README 计数+工具清单+边界段同步——顺带修复 N28 遗留的 README 清单缺 loft/sweep）。
+- [x] 4. 实机 e2e：L 型件加筋体积增量窗口断言；圆顶体积断言。（e2e_n29.py 4/4 PASS：dome 850.85 与 rib 3600.00 均 0.000% 精确；非柱面轴的结构化拒绝亦验；**偏差**：筋场景为盒顶立板而非 L 型件——薄板替代平顶可解析，L 型贴合属真筋能力）
+- [x] 5. 全套绿 + 提交；回填状态与执行记录。（510 passed + 101 subtests；ADR-0011 N29 增补）
 
 **验收**：同 N28 口径（测试绿 + 实机窗口断言 + 计数同步 + README 同步）。
 
@@ -211,6 +211,11 @@
 > - **圆顶 OK（mark=1 解锁）**：顶面 face 走查 zmin 最大 → `Select2(False, **mark=1**)`（mark=0 静默零产出）→ typed `InsertDome(height_m, False, False)` → ΔV=850.85mm³=球冠公式 0.000%。树「圆顶1」。
 > - **筋 BLOCKED（T8-mirror/pattern 同族，证据完备）**：13 变体直调全零产出（面构型×mark×RefIdx×宿主 typed-FM/dyn-FM/doc2×IsNormToSketch×方向布尔）；swFeatureNameID_e 无 Rib 项 → CreateDefinition 死路。**生产走数学替代**：筋=薄板 box 组合（如实声明非参数联动，先例 pattern/环阵）；宏录制器对照为终极路径（与 T8 两 BLOCKED 同队列）。
 > - 生产契约输入就绪：圆顶/基准轴/基准面原生三件 + 筋数学替代一件 → 步骤 2（TDD）按「参考几何创建后被圆顶消费」的调用序断言设计。
+> **2026-09-01 步骤 2-5 完成（实现批）**：
+> - **TDD**：`tests/test_part_refgeom.py` 15 用例（RefPlane 的 InsertRefPlane(8,m) 直调断言、RefAxis 的面走查+Select2(False,0)+零参 InsertAxis 属性语义+非柱面拒绝、Rib 的偏移面+矩形+挤出调用序与「math substitute」诚实文案断言、Dome 的 mark=1+typed InsertDome(3p)+树差集拒绝路径）。
+> - **实现**：`part.py` 新增 `create_ref_plane`/`create_ref_axis`/`create_rib`（+`TOP_PLANE_CANDIDATES`、`_cylindrical_face_by_name` 走查哨兵，MAX_FACE_WALK）；`decorations.py` 新增 `apply_dome`（复用 `_select_named_faces` mark=1 + 局部 import `_typed_doc2`）；registry 4 工具（全 STATE_CHANGE）。
+> - **验证**：全套 **510 passed + 101 subtests**（+15 用例）；e2e `tools/e2e_n29.py` **4/4 PASS**（ref_plane「基准面1」/ ref_axis「基准轴1」+非柱面 INVALID_PARAMETER / dome ΔV=850.85 **0.000%** / rib ΔV=3600.00 **0.000%**）。
+> - 工具计数 71→75（默认）/73→77（产品）；ADR-0011 增补 N29 段（筋=第三次启用数学替代纪律，宏录制器终极路径同 T8 队列）。
 
 ---
 

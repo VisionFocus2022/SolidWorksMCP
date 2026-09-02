@@ -29,6 +29,7 @@ from solidworks_mcp.solidworks_api.design import (
 )
 from solidworks_mcp.solidworks_api.decorations import (
     apply_chamfer,
+    apply_dome,
     apply_fillet,
     apply_shell,
 )
@@ -36,7 +37,10 @@ from solidworks_mcp.solidworks_api.features import cut_real_thread
 from solidworks_mcp.solidworks_api.part import (
     create_cone,
     create_loft,
+    create_ref_axis,
+    create_ref_plane,
     create_revolved,
+    create_rib,
     create_swept,
     get_mass_properties,
 )
@@ -238,6 +242,60 @@ def solidworks_part_create_loft(
             save_path,
             overwrite_confirm,
         ),
+        launch_if_needed,
+    )
+
+
+def solidworks_part_create_ref_plane(
+    offset_mm: PositiveMM,
+    plane: str = "front",
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Reference plane parallel to the front plane at an offset distance (for sketching on)."""
+    return _call_connected(
+        lambda sw: create_ref_plane(sw, offset_mm, plane),
+        launch_if_needed,
+    )
+
+
+def solidworks_part_create_ref_axis(
+    face_name: NonEmptyString,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Reference axis from a named cylindrical face (names from list_faces)."""
+    return _call_connected(
+        lambda sw: create_ref_axis(sw, face_name),
+        launch_if_needed,
+    )
+
+
+def solidworks_part_create_rib(
+    length_mm: PositiveMM,
+    height_mm: PositiveMM,
+    thickness_mm: PositiveMM,
+    base_z_mm: NonNegativeMM = 0.0,
+    x_center_mm: float = 0.0,
+    y_center_mm: float = 0.0,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Rib as a rectangular boss plate (math substitute — not wall-adaptive; InsertRib is unavailable)."""
+    return _call_connected(
+        lambda sw: create_rib(
+            sw, length_mm, height_mm, thickness_mm, base_z_mm,
+            x_center_mm, y_center_mm,
+        ),
+        launch_if_needed,
+    )
+
+
+def solidworks_part_apply_dome(
+    face_name: NonEmptyString,
+    height_mm: PositiveMM,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Raise a dome of the given height on the named planar/circular face (names from list_faces)."""
+    return _call_connected(
+        lambda sw: apply_dome(sw, face_name, height_mm),
         launch_if_needed,
     )
 
@@ -464,6 +522,22 @@ def register(mcp) -> None:
     mcp.tool(
         title="Create lofted part", annotations=STATE_CHANGE, structured_output=True
     )(solidworks_part_create_loft)
+    mcp.tool(
+        title="Create reference plane",
+        annotations=STATE_CHANGE,
+        structured_output=True,
+    )(solidworks_part_create_ref_plane)
+    mcp.tool(
+        title="Create reference axis",
+        annotations=STATE_CHANGE,
+        structured_output=True,
+    )(solidworks_part_create_ref_axis)
+    mcp.tool(
+        title="Create rib plate", annotations=STATE_CHANGE, structured_output=True
+    )(solidworks_part_create_rib)
+    mcp.tool(
+        title="Apply dome to face", annotations=STATE_CHANGE, structured_output=True
+    )(solidworks_part_apply_dome)
     mcp.tool(
         title="Apply fillet to faces", annotations=STATE_CHANGE, structured_output=True
     )(solidworks_part_apply_fillet)

@@ -81,3 +81,19 @@ FeatureData 扫描中零产出（BLOCKED）；soak 100 轮 SW 工作集 +1.83GB
 - **证据**：探针 `tools/probe_part/probe_loft_sweep_enum.py` +
   `probe_n28_unblock.py`（2/2 一次收敛）、e2e `tools/e2e_n28.py`
   （sweep 2467.40 精确 / loft 14922.04 窗口 0.004%）。
+
+### N29 增补（2026-09-01）：参考几何/圆顶原生 + 筋数学替代
+
+- **原生三件落地**：基准面=`fm.InsertRefPlane(8, dist)`（N28 已验，本期独立成工具）；
+  基准轴=柱面走查（`GetSurface().IsCylinder`）+`Select2(False,0)`+零参
+  `IModelDoc2.InsertAxis`（dynamic 上以属性语义取值即触发；`InsertAxis2` 编组
+  报 DISP_E_PARAMNOTFOUND）；圆顶=按名选面 **mark=1**（mark=0 静默拒收）+typed
+  `InsertDome(3 参)`，球冠体积精确（⌀20 顶+5 → 850.85，0.000%）。
+- **筋 BLOCKED → 数学替代（第三次启用本 ADR 替代纪律）**：InsertRib 13 变体
+  直调全零产出（面构型×mark×RefIdx×宿主×方向布尔全组合），且 swFeatureNameID_e
+  无 Rib 项 → CreateDefinition 路线关闭。生产 `create_rib`=偏移基准面+矩形草图+
+  凸台拉伸的**薄板**：参数联动（真特征）、体积精确（3600，0.000%），但**非壁自
+  适应**（真筋会贴合相邻壁延伸）——docstring/README/message 如实声明。宏录制器
+  对照为终极解锁路径（与 T8 mirror/pattern 同队列）。
+- **证据**：探针 `tools/probe_part/probe_n29_unblock.py`（3/4 可达）、e2e
+  `tools/e2e_n29.py`（4/4 PASS，dome/rib 均 0.000%）。
