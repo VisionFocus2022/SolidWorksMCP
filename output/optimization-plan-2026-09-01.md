@@ -69,7 +69,7 @@
 | N27 | P2 | 缓存命中率报表导出 CSV/JSON（H2） | ai | 无 | 2h/1晚 | `[x]` 2026-08-31（b5d26f2，637 passed；偏差：测试文件名 test_stats_export_route.py） | 2026-08-31 |
 | N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（工具 71，495+97 绿，e2e 双 PASS） | 2026-09-01 |
 | N29 | P2 | 零件长尾波2：筋/圆顶/参考几何 | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（3/4 原生+筋数学替代；工具 71→75；510+101 绿；e2e 4/4 PASS 双 0.000%） | 2026-09-01 |
-| N30 | P2 | 零件长尾波3：多实体 combine + 通用草图原语 | 主 | U1 | 5h/2晚 | `[ ]` 需 SW 实机 | |
+| N30 | P2 | 零件长尾波3：多实体 combine + 通用草图原语 | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（**偏差**：combine BLOCKED 9+ 变体→数学替代=Merge 挤出已有；样条延后；落地 polygon+slot，77/79，518+103 绿，e2e 双 0.000%） | 2026-09-01 |
 | N31 | P2 | CSG 契约 v2 扩 op（D5 范围随波次驱动） | 主 | U1 + N28-N30 任一完成 | 3h/1晚 | `[ ]` | |
 | N32 | P2 | BOM 气泡引线（drawing 域） | 主 | U1 | 3h/1晚 | `[ ]` 需 SW 实机 | |
 | N33 | P2 | 爆炸图（assembly 域 + 图纸投影） | 主 | U1 | 4h/2晚 | `[ ]` 需 SW 实机 | |
@@ -221,16 +221,21 @@
 
 ## 11. N30 零件长尾波3：多实体 combine + 通用草图原语（P2，主仓，5h/2晚，需 SW 实机）
 
-- [ ] 1. 类型库取证：多实体（InsertFeatureBlend/BodyAdd 系——FeatureManager 多实体布尔）、草图原语（多边形 CreatePolygon 系 / 槽 CreateSlot 系 / 样条 SketchSpline 系）。
-- [ ] 2. TDD：combine 的实体选择集契约（错误路径：单实体调用 combine 报 INVALID_PARAMETER）；草图原语参数枚举化先例（N19 ThreadSpec Literal 模式）。
-- [ ] 3. 实现 + 工具计数断言同步。
-- [ ] 4. 实机 e2e：box+cylinder 两实体 add → 体积=两体积之和窗口断言；等体积 subtract 验证。
-- [ ] 5. 全套绿 + 提交；回填状态与执行记录。
+- [x] 1. 类型库取证：IBody2.Operations(2)/InsertCombineFeature、CreatePolygon 8 参/CreateSketchSlot 14 参/CreateSpline variant 数组 + SWBODYADD=15903 反射。
+- [x] 2. TDD：tests/test_part_primitives.py 8 用例（RED→GREEN；combine 契约因 BLOCKED 改记偏差）。
+- [x] 3. 实现 + 工具计数断言同步（polygon+slot 两工具，75→77/产品 79；README 同步）。
+- [x] 4. 实机 e2e（**偏差**：combine 改 BLOCKED 记录——双实体制造与体积和 72000 探针已证，布尔调用不可达；polygon/slot 双 0.000%）。
+- [x] 5. 全套绿 + 提交；回填状态与执行记录。
 
 **验收**：同 N28 口径。
 
 **执行记录**：
-> （待回填）
+> **2026-09-01 完成（一轮：取证+实现）**，探针 `tools/probe_part/probe_n30_unblock.py`（2/4 原生+1 替代已有+1 延后）：
+> - **polygon OK（0.000%）**：CreatePolygon 8 参全标量（内接 R10 六边形×h10=2598.08 精确）→ 工具 `part_create_polygon`。
+> - **slot OK（0.000%）**：CreateSketchSlot **14 参**（尾参 CenterArcDirection/AddDimension 易漏）；line 型中心线面积=L·W+π(W/2)²（中心线含端半圆——首版公式差 32% 被实测抓出）→ 工具 `part_create_slot`（length>width 校验）。
+> - **combine BLOCKED（证据完备 9+ 变体）**：双实体制造可行（FeatureExtrusion2 第 18 参 Merge=False，bodies=2/72000 实证）；body 级 Operations(2) 编组须裸 `_oleobj_`（wrapper 全类型不匹配），通编组后 ErrorCode=1 swBodyOperationNonApiBody（含 body.Copy() 同）——文档体不在 body 级语义域；特征级 InsertCombineFeature typed 静默零产出（T8 族）。**数学替代已验证**：Merge=True 挤出自动融合（N29 rib 单实体精确）——AI 建模路径无需分离体。
+> - **样条延后（双坑）**：CreateSpline variant 数组 (12,1) 高危族 + dynamic 解析为属性返回 None。
+> - 验证：全套 518+103（+8）；e2e_n30.py 2/2 PASS 双 0.000%。
 
 ---
 

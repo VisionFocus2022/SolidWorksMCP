@@ -23,7 +23,7 @@ class TestServerRegistration(unittest.TestCase):
         tools = mcp._tool_manager.list_tools()
         resources = mcp._resource_manager.list_resources()
         prompts = mcp._prompt_manager.list_prompts()
-        self.assertEqual(len(tools), 75)
+        self.assertEqual(len(tools), 77)
         self.assertEqual(len(resources), 3)
         self.assertEqual(len(prompts), 5)
 
@@ -154,14 +154,14 @@ class TestProductToolGate(unittest.TestCase):
 
     def test_default_subprocess_registers_71_tools(self):
         tools = self._registered_tools_in_subprocess({})
-        self.assertEqual(len(tools), 75)
+        self.assertEqual(len(tools), 77)
         self.assertNotIn("solidworks_part_create_ring_light", tools)
 
     def test_product_tools_register_under_env_gate(self):
         tools = self._registered_tools_in_subprocess(
             {"SOLIDWORKS_MCP_PRODUCT_TOOLS": "ring_light"}
         )
-        self.assertEqual(len(tools), 77)
+        self.assertEqual(len(tools), 79)
         self.assertIn("solidworks_part_create_ring_light", tools)
         self.assertIn("solidworks_part_create_ring_light_v3", tools)
 

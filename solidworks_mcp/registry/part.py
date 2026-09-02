@@ -37,10 +37,12 @@ from solidworks_mcp.solidworks_api.features import cut_real_thread
 from solidworks_mcp.solidworks_api.part import (
     create_cone,
     create_loft,
+    create_polygon,
     create_ref_axis,
     create_ref_plane,
     create_revolved,
     create_rib,
+    create_slot,
     create_swept,
     get_mass_properties,
 )
@@ -241,6 +243,45 @@ def solidworks_part_create_loft(
             plane,
             save_path,
             overwrite_confirm,
+        ),
+        launch_if_needed,
+    )
+
+
+def solidworks_part_create_polygon(
+    sides: int,
+    circumradius_mm: PositiveMM,
+    height_mm: PositiveMM,
+    inscribed: bool = True,
+    plane: str = "front",
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Regular N-sided prism (3-60 sides): polygon sketch + boss extrude."""
+    return _call_connected(
+        lambda sw: create_polygon(
+            sw, sides, circumradius_mm, height_mm, inscribed, plane,
+            save_path, overwrite_confirm,
+        ),
+        launch_if_needed,
+    )
+
+
+def solidworks_part_create_slot(
+    length_mm: PositiveMM,
+    width_mm: PositiveMM,
+    height_mm: PositiveMM,
+    plane: str = "front",
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Obround slot plate (centre-line length > width): straight-slot sketch + boss extrude."""
+    return _call_connected(
+        lambda sw: create_slot(
+            sw, length_mm, width_mm, height_mm, plane,
+            save_path, overwrite_confirm,
         ),
         launch_if_needed,
     )
@@ -522,6 +563,14 @@ def register(mcp) -> None:
     mcp.tool(
         title="Create lofted part", annotations=STATE_CHANGE, structured_output=True
     )(solidworks_part_create_loft)
+    mcp.tool(
+        title="Create regular polygon prism",
+        annotations=STATE_CHANGE,
+        structured_output=True,
+    )(solidworks_part_create_polygon)
+    mcp.tool(
+        title="Create slot plate", annotations=STATE_CHANGE, structured_output=True
+    )(solidworks_part_create_slot)
     mcp.tool(
         title="Create reference plane",
         annotations=STATE_CHANGE,

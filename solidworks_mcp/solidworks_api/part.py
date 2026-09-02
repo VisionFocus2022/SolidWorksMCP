@@ -1045,6 +1045,166 @@ def create_rib(
         return error_response(f"Failed to create rib: {exc}")
 
 
+def create_polygon(
+    sw_app: SolidWorksApp,
+    sides: int,
+    circumradius_mm: float,
+    height_mm: float,
+    inscribed: bool = True,
+    plane: str = "front",
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+) -> dict:
+    """Regular N-sided prism: polygon sketch + boss extrude (merged).
+
+    Real-machine contract (N30 probe): ISketchManager.CreatePolygon takes 8
+    scalars — the edge reference point is (circumradius, 0). Inscribed=True
+    makes the polygon inscribed in that circle (volume = N/2·R²·sin(2π/N)·h);
+    False circumscribes it (R is then the inradius)."""
+    try:
+        if not isinstance(sides, int) or isinstance(sides, bool) or not 3 <= sides <= 60:
+            return error_response(
+                "sides must be an integer in [3, 60]", code="INVALID_PARAMETER"
+            )
+        circumradius_mm = positive_number("circumradius_mm", circumradius_mm)
+        height_mm = positive_number("height_mm", height_mm)
+        if plane != "front":
+            return error_response(
+                "Only the front plane polygon is supported",
+                code="INVALID_PARAMETER",
+            )
+        if save_path:
+            valid, message = validate_output_file(
+                save_path, {".sldprt"}, overwrite_confirm
+            )
+            if not valid:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+
+        model, _was_created = _get_or_create_part(sw_app)
+        if _select_plane(model) is None:
+            return error_response("Could not select a reference plane")
+
+        model.SketchManager.InsertSketch(True)
+        model.SketchManager.CreatePolygon(
+            0.0, 0.0, 0.0,
+            mm_to_m(circumradius_mm), 0.0, 0.0,
+            sides, inscribed,
+        )
+        model.SketchManager.InsertSketch(True)
+
+        feature = _extrude_sketch(model, mm_to_m(height_mm))
+        if feature is None:
+            return error_response("Extrusion feature creation failed")
+
+        result = {"feature_name": feature.Name}
+        if save_path:
+            ok, message, sink_path = ensure_sink_path(save_path)
+            if not ok:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
+            if save_result != swFileSaveErrorNone:
+                return error_response(f"SaveAs3 failed with code {save_result}")
+            result["saved_to"] = save_path
+
+        return success_response(
+            data=result,
+            message=(
+                f"Created {sides}-sided prism (circumradius {circumradius_mm}mm, "
+                f"height {height_mm}mm)"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to create polygon prism")
+        return error_response(f"Failed to create polygon prism: {exc}")
+
+
+def create_slot(
+    sw_app: SolidWorksApp,
+    length_mm: float,
+    width_mm: float,
+    height_mm: float,
+    plane: str = "front",
+    save_path: Optional[str] = None,
+    overwrite_confirm: bool = False,
+) -> dict:
+    """Obround (slot) plate: straight-slot sketch + boss extrude (merged).
+
+    Real-machine contract (N30 probe): CreateSketchSlot line-type(0) /
+    center-center(0); the slot area is length·width + π(width/2)² — the
+    centre-line length includes the end radii, so length must exceed
+    width."""
+    try:
+        length_mm = positive_number("length_mm", length_mm)
+        width_mm = positive_number("width_mm", width_mm)
+        height_mm = positive_number("height_mm", height_mm)
+        if length_mm <= width_mm:
+            return error_response(
+                "length_mm must exceed width_mm (the centre line includes the "
+                "end radii)",
+                code="INVALID_PARAMETER",
+            )
+        if plane != "front":
+            return error_response(
+                "Only the front plane slot is supported",
+                code="INVALID_PARAMETER",
+            )
+        if save_path:
+            valid, message = validate_output_file(
+                save_path, {".sldprt"}, overwrite_confirm
+            )
+            if not valid:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+
+        model, _was_created = _get_or_create_part(sw_app)
+        if _select_plane(model) is None:
+            return error_response("Could not select a reference plane")
+
+        half_length_m = mm_to_m(length_mm) / 2.0
+        width_m = mm_to_m(width_mm)
+        model.SketchManager.InsertSketch(True)
+        model.SketchManager.CreateSketchSlot(
+            0, 0, width_m,
+            0.0, -half_length_m, 0.0,
+            0.0, half_length_m, 0.0,
+            width_m / 2.0, 0.0, 0.0,
+            1, False,
+        )
+        model.SketchManager.InsertSketch(True)
+
+        feature = _extrude_sketch(model, mm_to_m(height_mm))
+        if feature is None:
+            return error_response("Extrusion feature creation failed")
+
+        result = {"feature_name": feature.Name}
+        if save_path:
+            ok, message, sink_path = ensure_sink_path(save_path)
+            if not ok:
+                return error_response(message, code="INVALID_OUTPUT_PATH")
+            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
+            if save_result != swFileSaveErrorNone:
+                return error_response(f"SaveAs3 failed with code {save_result}")
+            result["saved_to"] = save_path
+
+        return success_response(
+            data=result,
+            message=(
+                f"Created slot plate {length_mm}x{width_mm}mm (centre line), "
+                f"height {height_mm}mm"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to create slot plate")
+        return error_response(f"Failed to create slot plate: {exc}")
+
+
 def get_mass_properties(sw_app: SolidWorksApp) -> dict:
     """Read mass properties of the active part."""
     try:

@@ -6,10 +6,10 @@
 
 ## 主要能力
 
-- 使用官方 Python MCP SDK，通过 stdio 提供 75 个 tools、3 个 resources、5 个 prompts
+- 使用官方 Python MCP SDK，通过 stdio 提供 77 个 tools、3 个 resources、5 个 prompts
 - 连接正在运行的 SolidWorks，或在明确允许时自动启动
 - 新建零件，创建板件、块体、圆柱体和圆孔
-- 生成 9 行球形穹顶环形灯零件（产品专用工具，代码位于 solidworks_mcp/examples/，默认不注册；设 `SOLIDWORKS_MCP_PRODUCT_TOOLS=ring_light` 后启用，工具数 75 → 77）
+- 生成 9 行球形穹顶环形灯零件（产品专用工具，代码位于 solidworks_mcp/examples/，默认不注册；设 `SOLIDWORKS_MCP_PRODUCT_TOOLS=ring_light` 后启用，工具数 77 → 79）
 - 按顺序执行 new_part、plate、box、cylinder、cone、hole、threaded_hole、annular_pattern 设计计划
 - 打开 SolidWorks 文件，导入 STEP，导出 STEP/STL
 - 查询活动文档、质量属性、特征树和装配零部件
@@ -98,7 +98,7 @@ Tools 按领域分为：
 
 - 连接：solidworks_connect、solidworks_get_active_document
 - 设计：solidworks_design_capabilities、solidworks_design_execute_plan
-- 零件：solidworks_part_new、solidworks_part_create_plate、solidworks_part_create_box、solidworks_part_create_cylinder、solidworks_part_cut_round_hole、solidworks_part_create_revolved、solidworks_part_create_loft、solidworks_part_create_swept、solidworks_part_create_ref_plane、solidworks_part_create_ref_axis、solidworks_part_create_rib、solidworks_part_apply_dome、solidworks_part_apply_fillet、solidworks_part_apply_chamfer、solidworks_part_apply_shell、solidworks_part_get_mass_properties
+- 零件：solidworks_part_new、solidworks_part_create_plate、solidworks_part_create_box、solidworks_part_create_cylinder、solidworks_part_cut_round_hole、solidworks_part_create_revolved、solidworks_part_create_loft、solidworks_part_create_swept、solidworks_part_create_polygon、solidworks_part_create_slot、solidworks_part_create_ref_plane、solidworks_part_create_ref_axis、solidworks_part_create_rib、solidworks_part_apply_dome、solidworks_part_apply_fillet、solidworks_part_apply_chamfer、solidworks_part_apply_shell、solidworks_part_get_mass_properties
 - 阵列：solidworks_pattern_annular_layout、solidworks_part_create_annular_pattern（通用同心环圆特征阵列，cut/boss，支持避让角相位优化）
 - 文件：solidworks_file_open、solidworks_file_close、solidworks_file_import_step、solidworks_file_export_step、solidworks_file_export_stl
 - 特征：solidworks_features_list、solidworks_feature_rename、solidworks_feature_set_suppression
