@@ -71,9 +71,9 @@
 | N29 | P2 | 零件长尾波2：筋/圆顶/参考几何 | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（3/4 原生+筋数学替代；工具 71→75；510+101 绿；e2e 4/4 PASS 双 0.000%） | 2026-09-01 |
 | N30 | P2 | 零件长尾波3：多实体 combine + 通用草图原语 | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（**偏差**：combine BLOCKED 9+ 变体→数学替代=Merge 挤出已有；样条延后；落地 polygon+slot，77/79，518+103 绿，e2e 双 0.000%） | 2026-09-01 |
 | N31 | P2 | CSG 契约 v2 扩 op（D5 范围随波次驱动） | 主 | U1 + N28-N30 任一完成 | 3h/1晚 | `[x]` 2026-09-01（v2=polygon_prism+swept_arc 仅重建方向；互证 ring 2.9e-16 / hex **0.0**；524+103 绿） | 2026-09-01 |
-| N32 | P2 | BOM 气泡引线（drawing 域） | 主 | U1 | 3h/1晚 | `[ ]` 需 SW 实机 | |
-| N33 | P2 | 爆炸图（assembly 域 + 图纸投影） | 主 | U1 | 4h/2晚 | `[ ]` 需 SW 实机 | |
-| N34 | P2 | aicad 前端冒烟测试（React/three.js 零测试兜底） | ai | U2 | 4h/2晚 | `[ ]` | |
+| N32 | P2 | BOM 气泡引线（drawing 域） | 主 | U1 | 3h/1晚 | `[x]` 2026-09-01（**偏差**：落地 drawing_insert_bom_table；AutoBalloon 家族 BLOCKED 10+ 变体→宏录制器队列；**顺带修复 add_component 组件丢失生产 bug**；78/80；530+104 绿；e2e PASS） | 2026-09-01 |
+| N33 | P2 | 爆炸图（assembly 域 + 图纸投影） | 主 | U1 | 4h/2晚 | `[x]` 2026-09-01（**偏差**：落地 assembly_explode=AutoExplode 一次通过；手工步进/爆炸态图纸投影留观察项；79/81；535+105 绿；e2e PASS） | 2026-09-01 |
+| N34 | P2 | aicad 前端冒烟测试（React/three.js 零测试兜底） | ai | U2 | 4h/2晚 | `[x]` 2026-09-01（Vitest+jsdom+testing-library 3 用例；依赖 npmmirror；test+build 双绿） | 2026-09-01 |
 
 > 远期观察项（本计划不排期，继承四期/审查 S5）：plan-then-execute 任务分解、RAG 示例检索、mate 约束求解器、多模型路由、原生 FeatureCircularPattern4 升级（G7，探针路径已留）、特征级缓存。
 > 建议执行顺序（依赖满足时）：N26/N27 先行（无前置）→ N24/N25（用户动作解锁）→ S3 波次 N28→N29→N30 与 S4 的 N32/N33/N34 可按晚穿插（域不相交可并行排期，但每晚仍单任务执行）→ N31 收口。
@@ -264,11 +264,11 @@
 
 **目标**：制造级图纸装配表达件（审查 G5）——BOM 表已有（N8 扩列），补气泡引线成套。
 
-- [ ] 1. 类型库取证：BOM 气泡 API（InsertBOMBalloon 系 / Annotation 视图级接口）可达性与参数签名。
-- [ ] 2. TDD：FakeModel 红→绿（气泡附着组件 ID 契约、行号与 BOM 表一致）。
-- [ ] 3. 实现：`registry/drawing.py` 新增 `drawing_insert_bom_balloons`；工具计数断言同步。
-- [ ] 4. 实机 e2e：装配图插 BOM 表 + 气泡 → 导出 PDF 断言气泡文本存在（复用既有 PDF 断言先例）。
-- [ ] 5. 全套绿 + 提交；回填状态与执行记录。
+- [x] 1. 类型库取证：AutoBalloon(1/2/3/4/5)+InsertBOMBalloon(2)+IView.InsertBomTable5/6 全签名；swBalloonTextItemNumber=1/SplitCirc=7 反射。
+- [x] 2. TDD：tests/test_drawing_bom.py 6 用例（**偏差**：气泡契约因 BLOCKED 未落地，改为 BOM 表契约）。
+- [x] 3. 实现：`drawing_insert_bom_table`（InsertBomTable5 11 参）；工具 78/80 同步。（**偏差**：原计划 drawing_insert_bom_balloons 因 AutoBalloon BLOCKED 未做）
+- [x] 4. 实机 e2e（**偏差**：e2e_n32.py=两组件装配+表进 PDF 43KB——气泡文本断言因 BLOCKED 不可做）。
+- [x] 5. 全套绿 + 提交；回填状态与执行记录。（530+104；两笔提交 13ca62a fix+576131f feat；**顺带修复 add_component 生产 bug**：preopen 切活动文档→每次新建装配→组件丢失，修复=先取装配+落对+ActivateDoc3 回）
 
 **验收**：PDF 内气泡实体存在且与 BOM 行对应；FakeModel 测试绿；计数同步。
 
