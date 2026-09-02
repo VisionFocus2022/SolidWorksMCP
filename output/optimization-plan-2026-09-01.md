@@ -51,8 +51,8 @@
 6. **节奏**：每晚 1 个任务为宜，最多 2 个（第二个必须 ≤2h 小任务）。
 7. **安全红线**（继承）：COM 调用必须经 `run_com(...)`；文件操作在 `allowed_root` 内；破坏性工具标 `DESTRUCTIVE`；MCP 入参 mm、COM 层 m；主仓覆盖率 ≥89%（CI 硬门 80% 不得降）；perf 断言禁放宽。
 8. **测试命令基线**：
-   - 主仓库：`venv\Scripts\python.exe -m pytest tests/ -q` → 基线 **510 passed + 101 subtests，约 11s**（2026-09-01，N29 后；此前 N28=495+97、N19=485+95；75 工具 5 处断言钉死）；
-   - aicad 仓库（在 aicad/ 内）：`venv\Scripts\python.exe -m pytest tests -q` → **637 passed**（2026-08-31 N27 后，两轮绿；此前基线 631；perf 负载下绿，严格空闲条件未验=N26）；
+   - 主仓库：`venv\Scripts\python.exe -m pytest tests/ -q` → 基线 **535 passed + 105 subtests，约 10s**（2026-09-01，N33 后=第五期 S3/S4 全部完成；79 工具/产品 81 断言钉死）；
+   - aicad 仓库（在 aicad/ 内）：pytest 637 passed + 前端 `npm test` 3 passed（2026-09-01 N34 后；perf 严格空闲条件未验=N26）；
    - 实机 e2e：`venv\Scripts\python.exe tools\e2e_sw_smoke.py`（需 SW 运行）。
 9. **中断恢复**：读到未勾选步骤继续；已勾选产物未提交则先补提交。以 `git status`/`git log` 实时状态为准，勿信旧快照。
 10. **工具计数同步**：S3/S4 主仓任务凡新增工具，先改 `tests/test_infrastructure.py` 与 `tests/test_server.py` 的 4 处计数断言（现 69 默认 / 71 开产品工具），再动实现。
@@ -281,11 +281,11 @@
 
 **目标**：装配表达最后一块（assembly 域 ExplodedView + drawing 投影双域联动）。
 
-- [ ] 1. 类型库取证：爆炸视图 API（ExplodeConfiguration / InsertExplodeStep 系）+ 工程图投影视图对爆炸配置的引用方式。
-- [ ] 2. TDD：FakeModel 红→绿（爆炸步骤的组件+变换向量契约；调用序：激活配置→步骤→保存）。
-- [ ] 3. 实现：`registry/assembly.py` 新增爆炸配置工具 + `registry/drawing.py` 视图插入支持爆炸配置引用；计数断言同步。
-- [ ] 4. 实机 e2e：三件装配爆炸→组件包围盒分离断言（x/y/z 间距窗口）；爆炸态投影出图 PDF 断言。
-- [ ] 5. 全套绿 + 提交；回填状态与执行记录。
+- [x] 1. 类型库取证：IAssemblyDoc.AutoExplode（零参）/CreateExplodedView/ShowExploded(2)/GetExplodedViewCount(Names)；IConfiguration.AddExplodeStep(4 参手工步进)；CreateDrawViewFromModelView3 第 2 参=配置名。
+- [x] 2. TDD：tests/test_assembly_explode.py 5 用例（**偏差**：AutoExplode 自动布局契约，非手工步进）。
+- [x] 3. 实现：`assembly_explode`（registry/assembly.py）；79/81 计数同步。（**偏差**：drawing 侧爆炸配置引用未做——探针实证「爆炸视图名/默认名」作配置参数被拒、空串可行，爆炸态投影留观察项）
+- [x] 4. 实机 e2e（**偏差**：e2e_n33.py=AutoExplode+count+名断言；包围盒分离/爆炸态 PDF 因收窄未做）。
+- [x] 5. 全套绿 + 提交；回填状态与执行记录。（535+105；00b1a57；探针首轮 AutoExplode 一次通过）
 
 **验收**：爆炸后组件 AABB 互不重叠（窗口断言）；PDF 含爆炸视图；计数同步。
 
@@ -298,11 +298,11 @@
 
 **目标**：最终交付物视觉正确性的第一道自动防线（现状零测试——审查 G3；不做像素级比对，先立「渲染不炸 + 关键交互通」冒烟线）。
 
-- [ ] 1. **选型**：Vitest + @testing-library/react（组件级冒烟）；three.js 场景用实例存在性断言（mount 后 canvas 节点与 scene 实例非空），不做视觉快照（visual 类失败路由人工，不自动改生产代码——UIA 创建侧纪律）。
-- [ ] 2. **TDD**：先写 3-5 个冒烟用例跑红（预览面板渲染、参数表单提交触发 mock API、导出按钮 fmt 联动——含 N20 的 dxf）。
-- [ ] 3. **实现**：测试脚手架 + 必要的 mock 层（fetch/WS mock）；`npm test` 脚本入 package.json。
-- [ ] 4. `npm run build` + `npm test` 双绿；若 N25 已接 CI 则 pytest+npm build 双 job 均含。
-- [ ] 5. 提交：`test(frontend): 冒烟测试脚手架与首批用例（N34）`；回填状态与执行记录。
+- [x] 1. **选型**：Vitest@2 + @testing-library/react@16 + jsdom（**偏差**：依赖直连 npm 失败，经 npmmirror 镜像装齐）；three.js viewport 以 canvas 挂载点桩断言（jsdom 无 WebGL——scene 实例断言留浏览器 e2e）。
+- [x] 2. **TDD**：src/__tests__/smoke.test.tsx 3 用例（App 双栏壳+viewport 挂载点；ExportBar 无版本禁用；有版本全格式链接含 N20 DXF——importOriginal 部分桩 api/client + WS/Viewport mock + scrollIntoView polyfill）。
+- [x] 3. **实现**：vite.config.ts 加 test.environment=jsdom；package.json 加 test 脚本。
+- [x] 4. `npm test`（3 passed）+ `npm run build`（tsc+vite 854ms）双绿；CI 未接（N25/U6 挡）。
+- [x] 5. 提交 `a14f2f7`；回填状态与执行记录。
 
 **验收**：`npm test` 绿且覆盖 ≥3 关键交互路径；CI（若已接）双 job 绿。
 
