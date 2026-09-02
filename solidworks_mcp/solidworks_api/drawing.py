@@ -54,6 +54,8 @@ from solidworks_mcp.utils.security import (
     validate_output_file,
     validate_path,
 )
+from solidworks_mcp.solidworks_api.geometry import mm_to_m
+from solidworks_mcp.utils.validation import finite_number
 
 logger = logging.getLogger(__name__)
 
@@ -967,3 +969,68 @@ def export_drawing_png(
     return _export_drawing(
         sw_app, file_path, (".png",), overwrite_confirm, "PNG"
     )
+
+
+def insert_bom_table(
+    sw_app: SolidWorksApp,
+    view_name: str,
+    x_mm: float = 240.0,
+    y_mm: float = 20.0,
+    bom_type: str = "parts_only",
+) -> dict:
+    """Insert a BOM table on a named drawing view of an assembly drawing.
+
+    Real-machine contract (N32 probe): IView.InsertBomTable5 with
+    UseAnchorPoint=False, TopLeft anchor, no table template; parts-only
+    or top-level rows. The AutoBalloon family (bubbles) is BLOCKED on
+    this machine (probe evidence) — this tool lands the table only."""
+    try:
+        if not view_name:
+            return error_response("view_name must be non-empty", code="INVALID_PARAMETER")
+        bom_types = {"parts_only": 1, "top_level": 2}  # swBomType_e
+        if bom_type not in bom_types:
+            return error_response(
+                "bom_type must be 'parts_only' or 'top_level'",
+                code="INVALID_PARAMETER",
+            )
+        x_mm = finite_number("x_mm", x_mm)
+        y_mm = finite_number("y_mm", y_mm)
+
+        model = sw_app.get_active_document()
+        if model is None or call_or_value(model, "GetType") != swDocDRAWING:
+            return error_response("No active drawing document")
+
+        if not _select_view(model, view_name):
+            return error_response(
+                f"Could not select drawing view {view_name!r}",
+                code="SW_API_ERROR",
+            )
+        view = model.SelectionManager.GetSelectedObject6(1, -1)
+        if view is None:
+            return error_response(
+                "Selected object is not a drawing view", code="SW_API_ERROR"
+            )
+
+        table = view.InsertBomTable5(
+            False, mm_to_m(x_mm), mm_to_m(y_mm),
+            1, bom_types[bom_type], "", "",
+            False, 0, False, False,
+        )
+        if table is None:
+            return error_response(
+                "BOM table creation rejected", code="SW_API_ERROR"
+            )
+        return success_response(
+            data={"view": view_name, "bom_type": bom_type},
+            message=(
+                f"Inserted {bom_type} BOM table on view {view_name!r} "
+                "(balloons unavailable — AutoBalloon BLOCKED, ADR-0011)"
+            ),
+        )
+    except SolidWorksNotRunningError as exc:
+        return error_response(str(exc))
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to insert BOM table")
+        return error_response(f"Failed to insert BOM table: {exc}")

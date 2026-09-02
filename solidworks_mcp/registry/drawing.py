@@ -10,6 +10,7 @@ from solidworks_mcp.solidworks_api.drawing import (
     export_drawing_png,
     insert_model_dimensions,
     insert_note,
+    insert_bom_table,
     insert_section_view,
     insert_surface_finish,
     organize_dimensions,
@@ -138,6 +139,20 @@ def solidworks_drawing_insert_note(
     )
 
 
+def solidworks_drawing_insert_bom_table(
+    view_name: NonEmptyString,
+    x_mm: float = 240.0,
+    y_mm: float = 20.0,
+    bom_type: str = "parts_only",
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Insert a BOM table (parts-only or top-level) on a named assembly drawing view."""
+    return _call_connected(
+        lambda sw: insert_bom_table(sw, view_name, x_mm, y_mm, bom_type),
+        launch_if_needed,
+    )
+
+
 def register(mcp) -> None:
     mcp.tool(
         title="Create drawing from part",
@@ -184,3 +199,8 @@ def register(mcp) -> None:
         annotations=STATE_CHANGE,
         structured_output=True,
     )(solidworks_drawing_insert_note)
+    mcp.tool(
+        title="Insert BOM table",
+        annotations=STATE_CHANGE,
+        structured_output=True,
+    )(solidworks_drawing_insert_bom_table)
