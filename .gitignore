@@ -47,3 +47,6 @@ output/*
 
 # Independent nested project with its own repository
 aicad/
+
+# S5 T3 before-baseline worktree (aicad git worktree, contains .git link)
+aicad-s5-before/
