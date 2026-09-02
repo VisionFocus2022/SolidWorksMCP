@@ -65,8 +65,15 @@ class FakeRingLightModel:
 
 
 class TestNormalizePathOrdering(unittest.TestCase):
+    # GitHub-hosted runners hand tempfile a short-name TMP base
+    # (C:\Users\RUNNER~1\...); normalize_path expands it to the long form,
+    # so expectations must be built from the canonical base too.
+    def _canonical_base(self, base: str) -> str:
+        return normalize_path(base)
+
     def test_existing_prefix_resolves_junction_before_folding(self):
-        with tempfile.TemporaryDirectory() as base:
+        with tempfile.TemporaryDirectory() as raw_base:
+            base = self._canonical_base(raw_base)
             root = os.path.join(base, "root")
             outside = os.path.join(base, "outside")
             os.makedirs(root)
@@ -88,7 +95,8 @@ class TestNormalizePathOrdering(unittest.TestCase):
             self.assertFalse(is_path_allowed(normalized, root))
 
     def test_nonexistent_tail_resolves_deepest_existing_ancestor(self):
-        with tempfile.TemporaryDirectory() as base:
+        with tempfile.TemporaryDirectory() as raw_base:
+            base = self._canonical_base(raw_base)
             target = os.path.join(base, "a", "b", "new.sldprt")
 
             normalized = normalize_path(target)
