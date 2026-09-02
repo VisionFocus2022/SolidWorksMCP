@@ -20,14 +20,18 @@ MCP 服务器（官方 Python SDK，stdio）：把 SolidWorks 2026 COM 自动化
 ## 测试与基线
 
 ```powershell
-venv\Scripts\python.exe -m pytest tests/ -q     # 485 passed + 95 subtests（~12-22s）
+venv\Scripts\python.exe -m pytest tests/ -q     # 537 passed + 105 subtests（~10s）
 venv\Scripts\python.exe tools\e2e_sw_smoke.py   # 实机 e2e（需 SW 运行）
 ```
 
-- 覆盖率红线 ≥89%（硬门 80%）。
-- 工具计数被 4 处测试钉死（69 默认 / 71 开产品工具）——改工具数先改
+- 覆盖率红线 ≥89%（CI 硬门 80%）。
+- **CI 已激活（2026-09-02 全绿）**：GitHub Actions `VisionFocus2022/SolidWorksMCP`
+  windows runner——pytest+coverage≥80+pip-audit；推送 main 自动跑。
+- 工具计数被 5 处测试钉死（79 默认 / 81 开产品工具）——改工具数先改
   `tests/test_infrastructure.py` 与 `tests/test_server.py` 断言。
 - capabilities 与实现由 `tests/test_capabilities_sync.py` 锁定，勿手写漂移。
+- CI runner 的 tempfile 基址是 8.3 短名（RUNNER~1）：路径断言必须走
+  `normalize_path` 规范形（tests/test_hardening.py 的教训，2026-09-02）。
 
 ## 安全红线
 

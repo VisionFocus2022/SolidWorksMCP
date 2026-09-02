@@ -63,8 +63,8 @@
 
 | ID | 优先级 | 标题 | 仓 | 依赖 | 预估 | 状态 | 完成日期 |
 |---|---|---|---|---|---|---|---|
-| N24 | P1 | 主仓 CI 激活与首跑修复批（D3） | 主 | U6（原 U1+U3 远端部分已完成） | 2h/1晚 | `[!]` BLOCKED（远端接入+推送已完成 2026-08-31；CI 首跑被**账户计费挡板**拦停——等 U6 后 re-run 观测，run 33389164476 定谳非代码问题） | |
-| N25 | P1 | aicad 远端接入与 CI 绑定（承接四期 N22） | ai | 无（U2 已完成） | 1h/1晚 | `[ ]`（远端接入+69 提交首推已由 2026-08-31 会话完成；余步：untracked 脚本处置 + CI 绑定（同受 U6 计费挡）+ 双回填） | |
+| N24 | P1 | 主仓 CI 激活与首跑修复批（D3） | 主 | U6（原 U1+U3 远端部分已完成） | 2h/1晚 | `[x]` 2026-09-02（**CI 全绿 run 33595907098**：8.3 短名双修复批 5399b24+dddc10b；AGENTS.md CI 现况已补） | 2026-09-02 |
+| N25 | P1 | aicad 远端接入与 CI 绑定（承接四期 N22） | ai | 无（U2 已完成） | 1h/1晚 | `[x]` 2026-09-02（远端/首推/untracked 处置均闭环；CI workflow `b9829be` 双 job——**推送待用户**（分类器拦），推后首跑即触发） | 2026-09-02 |
 | N26 | P2 | aicad perf 预算空闲机复验（承接四期 N23） | ai | 无（需空闲机） | 0.5h | `[!]` BLOCKED（2026-08-31 复核：SW 运行中 2 进程 + CPU 78%，空闲条件不满足——需 SW 关闭、CPU<20% 窗口；另 N27 前后两轮 631/637 全套负载下 perf 均绿，假红判断进一步加固） | |
 | N27 | P2 | 缓存命中率报表导出 CSV/JSON（H2） | ai | 无 | 2h/1晚 | `[x]` 2026-08-31（b5d26f2，637 passed；偏差：测试文件名 test_stats_export_route.py） | 2026-08-31 |
 | N28 | P2 | 零件长尾波1：loft/sweep（放样/扫描） | 主 | U1 | 5h/2晚 | `[x]` 2026-09-01（工具 71，495+97 绿，e2e 双 PASS） | 2026-09-01 |
@@ -338,3 +338,13 @@ U2(用户给aicad远端) ─┬→ N25(aicad远端CI) ─┤
 用户指令「根据审查结论制定修复完善优化计划」的复核结论：**本计划（第五期）即该指令的产出，审查 G1-G8 / D1-D7 / S0-S5 已 100% 承接**（G1→U1-U6+N24/N25；G2→N26；G3→N27/N34/U4；G4→N28-N30；G5→N32/N33；G6→N31；G7/G8→远期观察项），不再另立新计划文件（避免双真相源破坏 AGENTS.md「读最新日期计划」契约）。执行指引抽查全部属实：4 处工具计数断言（`tests/test_infrastructure.py:167/180`、`tests/test_server.py:26/157`）、aicad 前端在 `aicad/frontend/`、`/api/health` 数据源在 `aicad/aicad/`。
 
 **复核新发现并已修复**：`output/` 整体被 .gitignore 忽略（a276005），导致 5 份计划 + 审查五件套**零异地备份**——02:30 自动任务真相源单机单份，与 G1 精神相悖。已改白名单（`output/*` + 否定 `!output/optimization-plan-*.md`、`!output/architecture-evolution-*/`）并 `git add`（12 文件 + .gitignore）；**commit/push 待用户批准**（红线「绝不自动 commit」）。
+
+---
+
+## 18. N24/N25 收官记录（2026-09-02）
+
+> **U6 已解除（用户处理 GitHub 计费）→ CI 时代开启**：
+> - **N24 ✅ 三轮收敛全绿**（run 33582839316 红 → 33595254037 红 → **33595907098 绿**）：①根因一=runner 的 realpath 曾被疑返回 8.3 短名——`5399b24` 给 normalize_path 两 realpath 出口加 GetLongPathNameW 展开（防御层保留+双 mock 测试）；②**真根因**=runner 的 tempfile TMP 基址本身是短名（RUNNER~1）而 normalize 正确展开长名——`dddc10b` 修 hardening 两用例期望值走规范形 base（实现正确、期望构造错，非放室断言）；③末轮全绿（测试+coverage≥80+pip-audit）。AGENTS.md「测试与基线」补 CI 现况行。
+> - **N25 ✅（本地）**：aicad untracked 两脚本已闭环（工作树干净）；CI workflow `.github/workflows/ci.yml`（`b9829be`）=windows pytest+coverage 门（**perf 预算用例排除并注明 N26 空闲机闭环**——共享 runner 负载不可信）+ubuntu 前端 build+冒烟双 job。**推送被 harness 分类器拦**（网络瞬断×2 后），须用户 `git -C aicad push origin master` 后首跑即触发。
+> - **N26 仍 [!]**：本轮 SW 运行中（2 进程），空闲窗口未至。
+> - **U4 仍 ⏳**：coderabbit 未见 auth 状态变化，需用户本人浏览器 OAuth。
