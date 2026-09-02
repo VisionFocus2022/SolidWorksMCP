@@ -28,7 +28,10 @@ def _expand_long_path(path: str) -> str:
     try:
         buffer = ctypes.create_unicode_buffer(len(path) + 260)
         result = ctypes.windll.kernel32.GetLongPathNameW(path, buffer, len(buffer))
-        return buffer.value if result else path
+        # A return > len(buffer) is the "required size" signal (buffer too
+        # small); the buffer then holds a partially-written string and must
+        # not be trusted.
+        return buffer.value if 0 < result < len(buffer) else path
     except Exception:  # noqa: BLE001 —— non-Windows / kernel32 missing: no-op
         return path
 

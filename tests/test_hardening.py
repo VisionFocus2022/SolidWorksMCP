@@ -9,6 +9,7 @@ candidates (action 18).
 from __future__ import annotations
 
 import _winapi
+import ctypes
 import os
 import tempfile
 import unittest
@@ -18,6 +19,7 @@ from unittest.mock import Mock, patch
 from solidworks_mcp.examples import ring_light, ring_light_v3
 from solidworks_mcp.solidworks_api.design import _save_active_model
 from solidworks_mcp.utils.security import (
+    _expand_long_path,
     ensure_sink_path,
     is_path_allowed,
     normalize_path,
@@ -285,3 +287,13 @@ class TestNormalizeExpands8_3ShortNames(unittest.TestCase):
         self.assertEqual(normalized, target)
         self.assertNotIn("~", normalized)
         self.assertTrue(realpath_calls)
+
+    def test_undersized_buffer_falls_back_to_input(self):
+        # GetLongPathNameW returns the *required size* (larger than the
+        # buffer) when the buffer is too small, not the copied length;
+        # that return value must be treated as failure so an undefined
+        # buffer content is never trusted (code-review LOW hardening).
+        tiny = ctypes.create_unicode_buffer(4)
+        with patch("ctypes.create_unicode_buffer", return_value=tiny):
+            expanded = _expand_long_path(r"C:\PROGRA~1")
+        self.assertEqual(expanded, r"C:\PROGRA~1")
