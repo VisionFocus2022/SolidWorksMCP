@@ -59,7 +59,7 @@
 | N20 | P1 | aicad DXF 导出 + 沙箱队列解耦 | ai | 无 | 5h/2晚 | `[x]` | 2026-08-31 ai 25abb4c + afa700e（一晚完成 a+b） |
 | N21 | P2 | AGENTS.md 双仓落地（AI 会话/自动任务导航） | 双 | 无 | 1.5h/1晚 | `[x]` | 2026-08-31 主 00db3e7 + ai df24618 |
 | N22 | P2 | aicad 远端与 CI 绑定 | ai | 无 | 1h | `[!]` 承接至五期 N25（`output/optimization-plan-2026-09-01.md`；自动任务读最新日期计划，勿在本文件执行） | |
-| N23 | P2 | aicad perf 预算空闲机复验（tessellate 100k ≤0.3s） | ai | 无 | 0.5h | `[ ]` 承接至五期 N26（同上） | |
+| N23 | P2 | aicad perf 预算空闲机复验（tessellate 100k ≤0.3s） | ai | 无 | 0.5h | `[x]` 2026-09-02 关单（空闲机 18/18 perf 全绿，假红定谳；详见 §12） | 2026-09-02 |
 
 > 远期观察项（本计划不排期，继承第三期）：任务分解 plan-then-execute、RAG 示例检索、mate 约束求解器、多模型路由、前端测试、特征级缓存、爆炸图、BOM 气泡引线、环阵原生 FeatureCircularPattern4、缓存命中率报表（H2）。
 
@@ -214,8 +214,8 @@
 
 **背景**【2026-08-31 亲验】：全套 620 passed + 1 failed——`tests/test_perf_budgets.py::test_tessellate_100k_faces_under_0.3s` 实测 0.434s（预算 0.3s）。定性为**环境假红**：①当帧 CPU 负载 94%、SLDWORKS.exe 在跑；②全套 437s vs 第三期基线 219s（OCCT 重载套件整体 ~2x 慢），主仓纯 Python 套件速度正常（12.4s）——整机慢而非 tessellate 回归；③分相实测 BRepMesh 原生 0.07s 正常、提取循环被负载拖慢；④提取代码自 batch 9（预算校准提交）后零改动。
 
-- [ ] 1. 空闲机（SW 关闭、CPU <20%）复跑 `venv\Scripts\python.exe -m pytest tests/test_perf_budgets.py -q`：绿 → 关单（假红确认）；仍红（>0.3s）→ 开提取循环微优化批（候选：`nodes.tolist()` 一次转列表后纯列表切片 extend，替代 array 切片；预期能拿回 20-40%）。
-- [ ] 2. 结论回填本节；若走优化批，预算线不动（禁放室断言过闸）。
+- [x] 1. 空闲机（SW 关闭、CPU <20%）复跑 `venv\Scripts\python.exe -m pytest tests/test_perf_budgets.py -q`：绿 → 关单（假红确认）；仍红（>0.3s）→ 开提取循环微优化批（候选：`nodes.tolist()` 一次转列表后纯列表切片 extend，替代 array 切片；预期能拿回 20-40%）。
+- [x] 2. 结论回填本节；若走优化批，预算线不动（禁放室断言过闸）。
 
 **执行记录**：
-> （待回填）
+> **2026-09-02 关单（五期 N26 执行，假红最终定谳）**：空闲条件满足（SLDWORKS.exe 主程序已关，仅余常驻 sldworks_fs.exe 文件服务；CPU 9%）跑 `pytest tests -m perf -q`（N25 统一的 perf marker 全集，含本文件 + test_runner 两处 3s 预算用例，共 18 个）→ **18 passed（43.87s）全绿**。tessellate 100k 预算 0.3s 在空闲机达标——2026-08-31 的 0.434s 确系负载假红，预算线不动、无需优化批。N23 承接链（四期→五期 N26）双处闭环。
