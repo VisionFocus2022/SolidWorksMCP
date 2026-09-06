@@ -17,7 +17,7 @@
 | 差距 | 内容 | 严重度 |
 |---|---|---|
 | G1 交付可靠 | 主仓领先 origin 15 提交（origin=04bf21f，HEAD=00db3e7）；aicad 69 提交零远端；ci.yml 是 GitHub Actions 语法但远端在 gitee——**CI 从未跑过**。任何磁盘故障=两周工作归零 | P0（S0/S1） |
-| G2/G3 质量观测 | perf 预算负载敏感假红待空闲机复验（红线禁放室断言）；缓存命中率有数据无报表；CodeRabbit 未 auth；aicad 前端零测试 | P2（S2/S4） |
+| G2/G3 质量观测 | perf 预算负载敏感假红待空闲机复验（红线禁放室断言）；缓存命中率有数据无报表；~~CodeRabbit 未 auth~~（已 auth 2026-09-02，J3 补跑见 §19）；aicad 前端零测试 | P2（S2/S4） |
 | G4/G5 能力长尾 | 零件：loft/sweep/筋/圆顶/参考几何/多实体/通用草图；图纸：BOM 气泡引线/爆炸图 | P2（S3/S4） |
 | G6/G7/G8 远期 | CSG v2 扩 op（本期部分承接为 N31）、原生阵列升级、智能自治层 | 远期观察 |
 
@@ -33,7 +33,7 @@
 | **U1** | 主仓 `git push origin main`（15 提交：N8-N14 六特性 + N18-N21） | D1（选 A） | ✅ 完成：`04bf21f..00db3e7` 已推 gitee，`origin/main == HEAD` |
 | **U2** | aicad 远端接入 | D2 | ✅ 完成（**路线偏差**）：gitee 建仓不可行（本机存储凭据=账号密码，API v5 401；gitee 无 push-to-create）→ 改走 github：`VisionFocus2022/aicad` 私有仓已建、origin 已接、69 提交全量首推。**gitee 侧可选补充**：手动建仓或提供 gitee PAT 后加第二远端 |
 | **U3** | 主仓 CI 激活（选 A：github 第二远端） | D3 | ◐ 远端接入完成：`VisionFocus2022/SolidWorksMCP` 私有仓已建 + 推送（main 上游已切至 `github/main`，gitee 仍为 origin）。**CI 首跑失败=账户计费挡板，非代码问题**（见 U6） |
-| **U4** | `coderabbit auth login`（CLI v0.7.5，signed out） | J3 | ⏳ 待用户交互：OAuth 须本人浏览器（`coderabbit auth login`），或提供 API key（`coderabbit auth login --api-key <key>`）后交自动会话补跑外审 |
+| **U4** | `coderabbit auth login`（CLI v0.7.5，signed out） | J3 | ✅ 完成（2026-09-02）：OAuth GitHub（Account VisionFocus2022 / m18680248091@163.com，US 区，org VisionFocus2022）；J3 外审同批补跑（见 §19，注意本仓默认比基 origin/master 与 main 无 merge base，须显式 `--base-commit`） |
 | **U5** | 确认主仓远端 URL 名 `AICAD.git` 与子仓 `aicad/` 同名异体是否历史误设 | D7 | ✅ 结案：`pengzixiao2025/AICAD.git` 就是主仓的 gitee 仓（持续在用，凭据身份 lancy666 有推送权），**非错接**；撞名歧义已由 github 侧命名消解（主仓=SolidWorksMCP、子仓=aicad）。改名 gitee 仓属可选、无功能必要 |
 | **U6（新增）** | github 计费处理：Settings → Billing & plans 修复付款/提高消费限额（私有仓 Actions 分钟需计费通道）；或决定将 SolidWorksMCP / aicad 转公开（公开仓 Actions 免费） | D3 延伸 | ⏳ **CI 解锁唯一前置**。处理后一句话通知即可触发 re-run（N24 步骤 5/6 收口） |
 
@@ -349,3 +349,13 @@ U2(用户给aicad远端) ─┬→ N25(aicad远端CI) ─┤
 > - **N25 ✅（本地）**：aicad untracked 两脚本已闭环（工作树干净）；CI workflow `.github/workflows/ci.yml`（`b9829be`）=windows pytest+coverage 门（**perf 预算用例排除并注明 N26 空闲机闭环**——共享 runner 负载不可信）+ubuntu 前端 build+冒烟双 job。**推送被 harness 分类器拦**（网络瞬断×2 后），须用户 `git -C aicad push origin master` 后首跑即触发。
 > - **N26 仍 [!]**：本轮 SW 运行中（2 进程），空闲窗口未至。
 > - **U4 仍 ⏳**：coderabbit 未见 auth 状态变化，需用户本人浏览器 OAuth。
+
+## 19. U4/J3 闭环记录（2026-09-02，用户动作交付批）
+
+> **U4 ✅ + J3 外审通道打通**：
+> - **U4 auth ✅**：用户本人浏览器 OAuth（CLI 直接后台调用被 non-interactive 检测拒绝，改 PowerShell Start-Process 开独立控制台窗口承载 TTY；首窗超时未完成，二窗成功）。`auth status`：GitHub VisionFocus2022（m18680248091@163.com），US 区，org VisionFocus2022。
+> - **J3 补跑 ✅**：`coderabbit review --agent --base-commit HEAD~5`（近 5 笔：dddc10b..0762b15，2 笔 security 代码 + 3 笔文档）。**首跑失败教训**：CLI 默认比基取 origin/HEAD→origin/master，与本仓 main 无 merge base（unrelated histories），必须显式 `--base-commit`/`--base`。终态：审查 5 文件，**3 findings 全 minor、0 Critical/0 Warning**，NDJSON 全文留档 `output/coderabbit-j3-review-2026-09-02.md`：
+>   1. `tests/test_hardening.py`（~297）：建议 mock GetLongPathNameW 原生返回值为 `len(tiny)+1`，让新护栏回归测试真正穿过「缓冲不足」条件分支——测试打磨，留待后续批；
+>   2. `AGENTS.md` 第 4 行「69 个工具」与第 30 行「79 默认/81 开产品工具」计数不一致（69 为陈旧值）——文档修正，留待后续批；
+>   3. N26 总览行仍 [!]——**核实不适用**：现行 68 行已是 `[x] 2026-09-02 关单`（外审读到 diff 时点旧态；§18 的「N26 仍 [!]」为时点记录）。
+> - 按门禁红线：外审发现只呈报留档，不因外审意见改代码/文档（修复另行立项）。§18 的「U4 仍 ⏳」同为时点记录，以本节与 §1.4 表为准。
