@@ -29,6 +29,8 @@ output/*
 # Governance docs live in output/ but must stay version-controlled (G1 backup spirit)
 !output/optimization-plan-*.md
 !output/architecture-evolution-*/
+# Real-machine e2e acceptance ledger (better-harness F2): timestamped JSON reports stay ignored
+!output/e2e-summary.md
 
 # Root-level smoke/product artifacts (written to CWD by e2e runs and ring_light)
 /part.STL

@@ -2,12 +2,15 @@
 
 前置：SolidWorks 2026 已启动（本脚本不自动拉起）。
 用法：项目根目录下  venv\\Scripts\\python.exe tools\\e2e_sw_smoke.py
-产物：output/e2e-report-<时间戳>.json（同时打印摘要）
+产物：output/e2e-report-<时间戳>.json（gitignored，同时打印摘要）
+     + output/e2e-summary.md（tracked 验收台账，better-harness F2：CI runner
+       无 SolidWorks，实机证据唯一的版本化落点；未运行时记录 SKIPPED）
 退出码：0=全部通过；1=存在失败步骤；2=SolidWorks 未运行。
 """
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -18,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 OUTPUT_DIR = ROOT / "output"
 WORK_DIR = OUTPUT_DIR / "e2e-work"
+SUMMARY_PATH = OUTPUT_DIR / "e2e-summary.md"
 
 
 def _short(result: dict) -> dict:
@@ -72,6 +76,44 @@ class E2E:
         return out
 
 
+def _git_commit() -> str:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=ROOT, capture_output=True, text=True, timeout=10,
+        ).stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def write_tracked_summary(
+    status: str,
+    exit_code: int,
+    passed: int = 0,
+    total: int = 0,
+    failed_steps: list | None = None,
+    sw_version: str | None = None,
+    note: str = "",
+) -> Path:
+    """滚动覆写 tracked 验收台账（.gitignore 负向豁免，better-harness F2）。"""
+    SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# 实机 E2E 验收台账",
+        "",
+        f"- 运行时间：{datetime.now().isoformat(timespec='seconds')}",
+        f"- git 提交：{_git_commit()}",
+        f"- SolidWorks 版本：{sw_version or 'N/A'}",
+        f"- 状态：{status}（退出码 {exit_code}）",
+        f"- 步骤：{passed}/{total} 通过"
+        + (f"；失败：{', '.join(failed_steps)}" if failed_steps else ""),
+    ]
+    if note:
+        lines.append(f"- 备注：{note}")
+    SUMMARY_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"验收台账：{SUMMARY_PATH}（tracked，{status}）")
+    return SUMMARY_PATH
+
+
 def main() -> int:
     from solidworks_mcp.solidworks_api import (
         design,
@@ -91,6 +133,11 @@ def main() -> int:
     if not conn["success"]:
         print("SolidWorks 未运行，退出码 2（不自动启动）")
         e2e.write_report(note="SolidWorks 未运行")
+        write_tracked_summary(
+            status="SKIPPED",
+            exit_code=2,
+            note="SolidWorks 未运行（.mcp.json auto_start=false，脚本不自动拉起）",
+        )
         return 2
 
     # --- 零件链 ---
@@ -463,6 +510,14 @@ def main() -> int:
                           "error": {"code": "EXCEPTION", "details": repr(exc)}})
 
     e2e.write_report()
+    write_tracked_summary(
+        status="PASS" if not e2e.failed else "FAIL",
+        exit_code=1 if e2e.failed else 0,
+        passed=sum(1 for s in e2e.steps if s["success"]),
+        total=len(e2e.steps),
+        failed_steps=e2e.failed or None,
+        sw_version=sw.version,
+    )
     return 1 if e2e.failed else 0
 
 
