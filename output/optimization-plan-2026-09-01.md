@@ -55,7 +55,7 @@
    - aicad 仓库（在 aicad/ 内）：pytest 637 passed + 前端 `npm test` 3 passed（2026-09-01 N34 后；perf 严格空闲条件未验=N26）；
    - 实机 e2e：`venv\Scripts\python.exe tools\e2e_sw_smoke.py`（需 SW 运行）。
 9. **中断恢复**：读到未勾选步骤继续；已勾选产物未提交则先补提交。以 `git status`/`git log` 实时状态为准，勿信旧快照。
-10. **工具计数同步**：S3/S4 主仓任务凡新增工具，先改 `tests/test_infrastructure.py` 与 `tests/test_server.py` 的 4 处计数断言（现 69 默认 / 71 开产品工具），再动实现。
+10. **工具计数同步**：S3/S4 主仓任务凡新增工具，先改 `tests/test_infrastructure.py` 与 `tests/test_server.py` 的 4 处计数断言（本节成文时 69 默认 / 71 开产品工具；S3/S4 完成后已钉死为 79/81，以 §2.1 基线与测试断言为准），再动实现。
 
 ## 3. 任务进度总览
 
