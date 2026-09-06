@@ -19,6 +19,38 @@ from solidworks_mcp.utils.com_executor import run_com
 
 
 class TestServerRegistration(unittest.TestCase):
+    def test_facade_reexports_every_registry_tool(self):
+        # server.py's compatibility re-export promise ("the imports below
+        # re-export the tool functions") must cover every registry tool def
+        # as new tools land (sweep gap found by expert-sweep-20260906 AR-2).
+        import importlib
+        import inspect
+        import pkgutil
+
+        import solidworks_mcp.registry as registry_pkg
+        import solidworks_mcp.server as server_mod
+
+        tool_defs = set()
+        for mod_info in pkgutil.iter_modules(registry_pkg.__path__):
+            if mod_info.name in {"__init__", "base", "prompts"}:
+                continue
+            mod = importlib.import_module(
+                f"solidworks_mcp.registry.{mod_info.name}"
+            )
+            for name, obj in vars(mod).items():
+                if name.startswith("solidworks_") and inspect.isfunction(obj):
+                    tool_defs.add(name)
+
+        missing = sorted(
+            name for name in tool_defs if not hasattr(server_mod, name)
+        )
+        self.assertEqual(
+            missing,
+            [],
+            f"server.py facade misses re-export of {len(missing)} tool(s); "
+            f"add them to the per-domain import blocks: {missing}",
+        )
+
     def test_standard_surfaces_are_registered(self):
         tools = mcp._tool_manager.list_tools()
         resources = mcp._resource_manager.list_resources()

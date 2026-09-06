@@ -235,6 +235,8 @@ def _capabilities() -> Dict[str, Any]:
             "Design plans currently support primitive bosses (box/plate/cylinder/cone), round cut holes, ISO threaded holes, and annular patterns.",
             "solidworks_part_create_ring_light generates a validated spherical-dome LED layout (row_counts is free-form, defaulting to the confirmed 9-row product layout); the native SLDPRT uses 24 annular bands when FeatureRevolve2 is unavailable.",
             "Assembly mates use the compatibility AddMate5 API for basic mate types.",
-            "Loft/sweep/complex surfaces, GD&T feature-control frames, simulation, and PDM are not yet exposed.",
+            "Complex surfaces, GD&T feature-control frames, simulation, and PDM are not yet exposed.",
+            "Drawing BOM balloons (AutoBalloon family) are blocked by the SolidWorks API on this machine; use drawing_insert_bom_table instead.",
+            "Exploded-state drawing projection is an open observation item; project from the saved model configuration.",
         ],
     }

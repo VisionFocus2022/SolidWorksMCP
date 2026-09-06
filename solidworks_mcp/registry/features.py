@@ -33,7 +33,7 @@ def solidworks_features_rebuild_csg(
     plan: Dict[str, Any],
     launch_if_needed: Optional[bool] = None,
 ) -> ToolResult:
-    """Rebuild a cross-engine CSG plan (v1: box/cylinder/cone/cut_cylinder, stacking semantics) as an SW feature tree."""
+    """Rebuild a cross-engine CSG plan as an SW feature tree (v1: box/cylinder/cone/cut_cylinder stacking semantics; v2 adds polygon_prism and swept_arc ops)."""
     return _call_connected(
         lambda sw: rebuild_csg_plan(sw, plan),
         launch_if_needed,

@@ -323,10 +323,6 @@ class TestDegenerateInput(unittest.TestCase):
         self.assertIn("success", result)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 # --- 堆叠原语直测（实机形态 fake：GetBox 6 元组属性 + Select2） ---
 
 import math
@@ -574,3 +570,8 @@ class CsgV2TestCase(RebuildTestCase):
             result = rebuild_csg_plan(self.sw, plan)
             self.assertFalse(result["success"], op)
             self.assertEqual(result["error"]["code"], "INVALID_PARAMETER", op)
+
+
+if __name__ == "__main__":
+    unittest.main()
+

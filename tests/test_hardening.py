@@ -250,10 +250,6 @@ class TestVersionDrivenTemplates(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestNormalizeExpands8_3ShortNames(unittest.TestCase):
     """GitHub-hosted runners resolve realpath to 8.3 short names (RUNNER~1)
     for the temp profile; the CI first run (33582839316) failed on exactly
@@ -297,3 +293,8 @@ class TestNormalizeExpands8_3ShortNames(unittest.TestCase):
         with patch("ctypes.create_unicode_buffer", return_value=tiny):
             expanded = _expand_long_path(r"C:\PROGRA~1")
         self.assertEqual(expanded, r"C:\PROGRA~1")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
