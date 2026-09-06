@@ -20,8 +20,8 @@ MCP 服务器（官方 Python SDK，stdio）：把 SolidWorks 2026 COM 自动化
 ## 测试与基线
 
 ```powershell
-venv\Scripts\python.exe -m pytest tests/ -q     # 537 passed + 105 subtests（~10s）
-venv\Scripts\python.exe tools\e2e_sw_smoke.py   # 实机 e2e（需 SW 运行）
+venv\Scripts\python.exe -m pytest tests/ -q     # 540 passed + 105 subtests（~10s，2026-09-06 F1 守卫后）
+venv\Scripts\python.exe tools\e2e_sw_smoke.py   # 实机 e2e（需 SW 运行；tracked 台账 output/e2e-summary.md）
 ```
 
 - 覆盖率红线 ≥89%（CI 硬门 80%）。
@@ -32,6 +32,9 @@ venv\Scripts\python.exe tools\e2e_sw_smoke.py   # 实机 e2e（需 SW 运行）
 - capabilities 与实现由 `tests/test_capabilities_sync.py` 锁定，勿手写漂移。
 - CI runner 的 tempfile 基址是 8.3 短名（RUNNER~1）：路径断言必须走
   `normalize_path` 规范形（tests/test_hardening.py 的教训，2026-09-02）。
+- **即席改动验证约定**：凡不经 N 系列计划的即席源码/配置改动，收尾回复必须
+  贴出所跑的验证命令与退出码（未验证须写明原因）——让改动正确性可被后来者
+  凭记录核验（better-harness F5，2026-09-06）。
 
 ## 安全红线
 
