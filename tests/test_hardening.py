@@ -298,3 +298,41 @@ class TestNormalizeExpands8_3ShortNames(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+class TestLongPathRetry(unittest.TestCase):
+    """N40/L-5: an undersized first buffer retries once with the required
+    size and succeeds; a buffer that never fits still falls back."""
+
+    def test_retry_with_required_size_succeeds(self):
+        path = r"C:\PROGRA~1"
+        long_name = r"C:\Program Files"  # 16 chars + null = 17 required
+
+        class FakeBuffer:
+            def __init__(self, size):
+                self._chars = ["\0"] * size
+                self.value = ""
+
+            def __len__(self):
+                return len(self._chars)
+
+        tiny = FakeBuffer(4)
+        big = FakeBuffer(17)
+        big.value = long_name
+
+        calls = {"n": 0}
+
+        def fake_api(p, buf, size):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return 17  # required size signal
+            return len(long_name)  # copied length
+
+        with patch(
+            "ctypes.create_unicode_buffer", side_effect=lambda n: tiny if calls["n"] == 0 else big
+        ), patch.object(
+            ctypes.windll.kernel32, "GetLongPathNameW", side_effect=fake_api
+        ):
+            expanded = _expand_long_path(path)
+        self.assertEqual(expanded, long_name)
+        self.assertEqual(calls["n"], 2)

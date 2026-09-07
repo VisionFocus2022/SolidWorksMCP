@@ -575,3 +575,23 @@ class CsgV2TestCase(RebuildTestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+class CsgNumericHygieneTestCase(RebuildTestCase):
+    """N40/L-3: NaN/inf/bool ride isinstance(x,(int,float)) into the plan —
+    the contract must reject them like validation.finite_number does."""
+
+    def test_nan_inf_bool_diameters_are_rejected(self):
+        for bad in (float("nan"), float("inf"), True):
+            plan = {
+                "version": 2,
+                "units": "mm",
+                "operations": [
+                    {"op": "polygon_prism", "name": "nut", "sides": 6,
+                     "circumradius": bad, "height": 8.0, "at": [0, 0, 0]},
+                ],
+            }
+            result = rebuild_csg_plan(self.sw, plan)
+            self.assertFalse(result["success"], bad)
+            self.assertEqual(result["error"]["code"], "INVALID_PARAMETER", bad)
+            self.assertIn("positive", result["message"], bad)

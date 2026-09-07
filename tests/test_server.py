@@ -184,7 +184,7 @@ class TestProductToolGate(unittest.TestCase):
         self.assertNotIn("solidworks_part_create_ring_light", tools)
         self.assertNotIn("solidworks_part_create_ring_light_v3", tools)
 
-    def test_default_subprocess_registers_71_tools(self):
+    def test_default_subprocess_registers_79_tools(self):
         tools = self._registered_tools_in_subprocess({})
         self.assertEqual(len(tools), 79)
         self.assertNotIn("solidworks_part_create_ring_light", tools)

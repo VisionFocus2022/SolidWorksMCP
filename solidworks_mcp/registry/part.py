@@ -183,7 +183,7 @@ def solidworks_part_create_revolved(
     outer_diameter: PositiveMM,
     height: PositiveMM,
     bore_diameter: NonNegativeMM = 0.0,
-    plane: str = "front",
+    plane: Literal["front"] = "front",
     save_path: Optional[str] = None,
     overwrite_confirm: bool = False,
     launch_if_needed: Optional[bool] = None,
@@ -200,11 +200,11 @@ def solidworks_part_create_revolved(
 
 def solidworks_part_create_swept(
     diameter_mm: PositiveMM,
-    path_type: str = "arc",
+    path_type: Literal["arc", "line"] = "arc",
     radius_mm: Optional[PositiveMM] = None,
     angle_deg: float = 90.0,
     length_mm: Optional[PositiveMM] = None,
-    plane: str = "front",
+    plane: Literal["front"] = "front",
     save_path: Optional[str] = None,
     overwrite_confirm: bool = False,
     launch_if_needed: Optional[bool] = None,
@@ -229,7 +229,7 @@ def solidworks_part_create_swept(
 def solidworks_part_create_loft(
     profile_diameters_mm: List[PositiveMM],
     section_spacing_mm: PositiveMM,
-    plane: str = "front",
+    plane: Literal["front"] = "front",
     save_path: Optional[str] = None,
     overwrite_confirm: bool = False,
     launch_if_needed: Optional[bool] = None,
@@ -253,7 +253,7 @@ def solidworks_part_create_polygon(
     circumradius_mm: PositiveMM,
     height_mm: PositiveMM,
     inscribed: bool = True,
-    plane: str = "front",
+    plane: Literal["front"] = "front",
     save_path: Optional[str] = None,
     overwrite_confirm: bool = False,
     launch_if_needed: Optional[bool] = None,
@@ -272,7 +272,7 @@ def solidworks_part_create_slot(
     length_mm: PositiveMM,
     width_mm: PositiveMM,
     height_mm: PositiveMM,
-    plane: str = "front",
+    plane: Literal["front"] = "front",
     save_path: Optional[str] = None,
     overwrite_confirm: bool = False,
     launch_if_needed: Optional[bool] = None,
@@ -289,7 +289,7 @@ def solidworks_part_create_slot(
 
 def solidworks_part_create_ref_plane(
     offset_mm: PositiveMM,
-    plane: str = "front",
+    plane: Literal["front"] = "front",
     launch_if_needed: Optional[bool] = None,
 ) -> ToolResult:
     """Reference plane parallel to the front plane at an offset distance (for sketching on)."""

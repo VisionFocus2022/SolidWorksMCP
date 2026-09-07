@@ -788,7 +788,8 @@ def _delete_new_features(
 
 # --- T16: cross-engine CSG rebuild (contract v1, docs/csg-plan-v1.md) ---
 
-CSG_VERSION = 1
+# Contract versions rebuild_csg_plan accepts (docs/csg-plan-v1.md).
+CSG_VERSIONS = (1, 2)
 CSG_V2_OPS = ("polygon_prism", "swept_arc")
 CSG_OPS = ("box", "cylinder", "cone", "cut_cylinder") + CSG_V2_OPS
 _Z_TOLERANCE = 1e-6
@@ -799,8 +800,9 @@ def _validate_csg_plan(plan: Any) -> Optional[str]:
     if not isinstance(plan, dict):
         return "plan must be a dict"
     version = plan.get("version")
-    if version not in (1, 2):
-        return (f"unsupported plan version {version!r} (expected 1 or 2)")
+    if version not in CSG_VERSIONS:
+        return (f"unsupported plan version {version!r} "
+                f"(expected ' or '.join(str(v) for v in CSG_VERSIONS))")
     if plan.get("units") != "mm":
         return "units must be 'mm'"
     ops = plan.get("operations")
@@ -834,7 +836,14 @@ def _validate_csg_plan(plan: Any) -> Optional[str]:
 
         def _positive(key):
             value = op.get(key)
-            if not isinstance(value, (int, float)) or value <= 0:
+            # bool is an int subclass and NaN/inf compare oddly — exclude all
+            # three so the contract matches validation.finite_number.
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or value <= 0
+            ):
                 return f"operation[{index}]: {kind} needs a positive {key}"
             return None
 

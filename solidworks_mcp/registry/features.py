@@ -145,7 +145,7 @@ def solidworks_feature_set_suppression(
 
 def register(mcp) -> None:
     mcp.tool(
-        title="Rebuild CSG plan", annotations=STATE_CHANGE, structured_output=True
+        title="Rebuild CSG plan", annotations=DESTRUCTIVE, structured_output=True
     )(solidworks_features_rebuild_csg)
     mcp.tool(
         title="Mirror feature about plane", annotations=STATE_CHANGE, structured_output=True

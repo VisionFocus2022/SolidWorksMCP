@@ -26,12 +26,24 @@ def _expand_long_path(path: str) -> str:
     existing paths; anything else returns the input unchanged.
     """
     try:
-        buffer = ctypes.create_unicode_buffer(len(path) + 260)
-        result = ctypes.windll.kernel32.GetLongPathNameW(path, buffer, len(buffer))
-        # A return > len(buffer) is the "required size" signal (buffer too
-        # small); the buffer then holds a partially-written string and must
-        # not be trusted.
-        return buffer.value if 0 < result < len(buffer) else path
+        kernel32 = ctypes.windll.kernel32
+        size = len(path) + 260
+        buffer = ctypes.create_unicode_buffer(size)
+        # Always pass the buffer's real length (a mocked create call may
+        # hand back something smaller than requested).
+        result = kernel32.GetLongPathNameW(path, buffer, len(buffer))
+        if 0 < result < len(buffer):
+            return buffer.value
+        if result >= len(buffer):
+            # "Required size" signal: retry once with the exact buffer
+            # (paths longer than len+260, e.g. deep \\?\ prefixes). The
+            # retry is only trusted when it fits the buffer we actually
+            # got — a mocked/undersized buffer still falls back.
+            buffer = ctypes.create_unicode_buffer(result)
+            retried = kernel32.GetLongPathNameW(path, buffer, len(buffer))
+            if 0 < retried < len(buffer):
+                return buffer.value
+        return path
     except Exception:  # noqa: BLE001 —— non-Windows / kernel32 missing: no-op
         return path
 
