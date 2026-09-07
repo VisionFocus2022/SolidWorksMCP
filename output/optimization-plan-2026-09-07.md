@@ -32,8 +32,8 @@
 
 | ID | 优先级 | 标题 | 仓 | 依赖 | 预估 | 状态 | 完成日期 |
 |---|---|---|---|---|---|---|---|
-| N35 | P1 | part.py 域拆分（H-1）+ utils/com.py 统一包装（M-2 联动） | 主 | 无 | 3h/1晚 | `[ ]` | |
-| N36 | P1 | 基线权威化（M-4）：AGENTS.md 实测刷新 + 回填纪律 + 多会话协调 | 双 | 无 | 0.5h | `[ ]` | |
+| N35 | P1 | part.py 域拆分（H-1）+ utils/com.py 统一包装（M-2 联动） | 主 | 无 | 3h/1晚 | `[x]` 2026-09-07（`d8e4857`：1243→521/548/144/132 四模块；门面 re-export 零破坏；e2e 0.000%；548+105 绿） | 2026-09-07 |
+| N36 | P1 | 基线权威化（M-4）：AGENTS.md 实测刷新 + 回填纪律 + 多会话协调 | 双 | 无 | 0.5h | `[x]` 2026-09-07（主仓 548+105@09-07+两纪律行；aicad 730 全集口径） | 2026-09-07 |
 | N37 | P2 | save helper 上提 + 错误 code 统一（M-1）+ makepy 存量替换（M-2 收口） | 主 | N35 | 2h/1晚 | `[ ]` | |
 | N38 | P2 | CSG op→handler 字典化（M-3，v3 前置） | 主 | 无 | 2h/1晚 | `[ ]` | |
 | N39 | P2 | LOW 批 1：方法名 71 / csg prompt v2 / CSG_VERSION 常量治理 | 主 | 无 | 0.5h | `[ ]` | |
@@ -62,7 +62,11 @@
 
 **测试更新**（patch 点跟实现走）：test_part_loft.py / test_part_refgeom.py / test_part_primitives.py 的 `patch("...part._select_plane"/"part.latest_feature_name"/"part._extrude_sketch")` 改指 part_advanced / part_refgeom 命名空间；调用目标同步。**判据=全套绿（用例数不减）+ py_compile + e2e 抽验 1 个（e2e_n29 走门面路径）**。
 
-- [ ] 1. utils/com.py 新建 static_wrap（TDD：单测断言 dynamic/typed 包裹行为）
+- [x] 1. utils/com.py 新建 static_wrap（TDD：6 用例；**偏差**：utils/com.py 系既有模块（call_or_value 家园）——追加而非新建，曾误覆盖即恢复）
+- [x] 2. part_refgeom.py 迁出三符号 + part_advanced.py 迁出五特征族（import part 的共享 helpers）——**偏差**：三模块互 import part 曾致循环（测试先导 advanced 即炸）→ 加拆 part_support.py（共享 helpers 第三层），子模块不 import part
+- [x] 3. part.py 删迁出段 + 尾部 re-export + 行数核验（521<800 ✓；advanced 548/refgeom 144/support 132）
+- [x] 4. decorations 改用 utils.com（清偿私有引用）；三测试文件 patch 点更新（含 test_part/test_revolve 的 get_part_template→part_support、refgeom 测试 rib 类指 advanced）
+- [x] 5. 全套绿（**548 passed + 105 subtests**，+6 utils_com 用例）+ e2e_n29 实机抽验 PASS（dome/rib 0.000% 门面路径）+ commit `d8e4857` + 回填
 - [ ] 2. part_refgeom.py 迁出三符号 + part_advanced.py 迁出五特征族（import part 的共享 helpers）
 - [ ] 3. part.py 删迁出段 + 尾部 re-export + 行数核验（<800）
 - [ ] 4. decorations 改用 utils.com（清偿私有引用）；三测试文件 patch 点更新
@@ -70,9 +74,9 @@
 
 ## 4. N36 基线权威化（P1，0.5h）
 
-- [ ] 1. AGENTS.md「测试与基线」刷新为**当日实测**（主仓 542+105@09-06 实测 / aicad 712+18 perf deselected）+ 增「**基线回填纪律**：凡增减测试数的任务，同 commit 刷新本节数字与日期」。
-- [ ] 2. 增「多会话协调」两行纪律：动 `output/` 前先 `git status` 确认无并行会话未提交产物（09-06 审查 JSON 被外部清理事件留档）；基线以**最新实测**为准，文档快照仅供参考。
-- [ ] 3. commit + 回填（aicad 侧 AGENTS/agents.md 若有基线数字同步检查）。
+- [x] 1. AGENTS.md 基线刷新 548+105@09-07（N35 后实测）+ 基线回填纪律行（两次同源复发史注记）。
+- [x] 2. 多会话协调纪律行（output/ 冲突事件留档：09-06 审查 JSON 曾被并行清理）。
+- [x] 3. aicad agents.md 基线 730 全集@09-07 + CI 口径注明（not perf=712+18）；双仓分别 commit。
 
 ## 5-10. N37-N41（后续批，按总览依赖序执行，细则实施时展开）
 
