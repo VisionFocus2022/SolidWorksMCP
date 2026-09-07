@@ -36,9 +36,9 @@
 | N36 | P1 | 基线权威化（M-4）：AGENTS.md 实测刷新 + 回填纪律 + 多会话协调 | 双 | 无 | 0.5h | `[x]` 2026-09-07（主仓 548+105@09-07+两纪律行；aicad 730 全集口径） | 2026-09-07 |
 | N37 | P2 | save helper 上提 + 错误 code 统一（M-1）+ makepy 存量替换（M-2 收口） | 主 | N35 | 2h/1晚 | `[x]` 2026-09-07（save_io 两段式 8 处收敛+design 复用；SW_API_ERROR 统一；assembly/features 存量替换；555+105 绿 +7） | 2026-09-07 |
 | N38 | P2 | CSG op→handler 字典化（M-3，v3 前置） | 主 | 无 | 2h/1晚 | `[x]` 2026-09-07（6 handler+显式 unknown fallback；参数类异常通道不回滚语义保持；27 用例+互证 e-16 双 OK） | 2026-09-07 |
-| N39 | P2 | LOW 批 1：方法名 71 / csg prompt v2 / CSG_VERSION 常量治理 | 主 | 无 | 0.5h | `[ ]` | |
-| N40 | P2 | LOW 批 2：Literal 收紧 / NaN 排除 / 注解统一 / 缓冲重试 | 主 | 无 | 1h | `[ ]` | |
-| N41 | P2 | LOW 批 3：探针标注 / FakeModel 合并 / 探针 helper 收敛 | 主 | 无 | 1h | `[ ]` | |
+| N39 | P2 | LOW 批 1：方法名 71 / csg prompt v2 / CSG_VERSION 常量治理 | 主 | 无 | 0.5h | `[x]` 2026-09-07（71→79；prompt 宣发 v2 两首建 op；CSG_VERSIONS=(1,2) 单源） | 2026-09-07 |
+| N40 | P2 | LOW 批 2：Literal 收紧 / NaN 排除 / 注解统一 / 缓冲重试 | 主 | 无 | 1h | `[x]` 2026-09-07（plane×6+path_type Literal；NaN/inf/bool 拒+守门用例；DESTRUCTIVE 对齐；重试一次+护栏用例——自身引入的 size-vs-len 回归被旧护栏抓出） | 2026-09-07 |
+| N41 | P2 | LOW 批 3：探针标注 / FakeModel 合并 / 探针 helper 收敛 | 主 | 无 | 1h | `[x]` 2026-09-07（INDEX 四探针✅标注+n33 表格修复；part_fakes 共享基座三文件收敛；**L-8c 裁决不做**=探针取证忠实性） | 2026-09-07 |
 
 > 远期观察项（继承五期，不排期）：S5 智能自治层二期（等 API key 基线数据）、宏录制器队列（mirror/pattern/rib/combine/AutoBalloon 五族）。
 > 排序原则（审查 §4）：**结构债先于扩能**——N35/N36 首批必做；N37 依赖 N35；其余按晚穿插。
@@ -98,3 +98,12 @@
 
 > **N37 ✅**（save_io 批）：`save_io.py` 两段式 helper（prepare 前置门+persist 尾存，SaveAs3 失败 code 统一 SW_API_ERROR）+7 用例；part.py/part_advanced.py 各 4 处样板正则收敛（8+8 块）；design._save_active_model 与 create_new_part 复用；assembly._wrap_static→utils.com.static_wrap（import as 别名）、features._typed_fm→typed_or_dynamic 组合（M-2 收口，全仓 makepy 包装单一家）；swept/polygon/slot feature 拒收响应补 code=SW_API_ERROR。**第三轮 patch 点跟实现**：test_part/test_revolve 的 validate_output_file/ensure_sink_path、test_design_extended 同款——全部改指 save_io 命名空间。全套 **555+105**（+7）。
 > **N38 ✅**（CSG handler 化）：`_CsgPlanError` 异常通道承载计划类错误（保持「不回滚直接返」原语义），builder 失败仍走 result→_fail（回滚）；6 handler（box/polygon_prism/swept_arc/stacked_solid×2/cut_cylinder）各自持有 stack_top 前置断言——审查担心的「新 op 漏检 None→TypeError 退化」在结构上不可再发生；未知 op 显式 fallback（与 _validate_csg_plan 漂移时双保险）。消息文本逐字保留，27 用例零改绿；roundtrip 互证 ring 2.9e-16 / hex 2.2e-16 双 OK。
+
+---
+
+## 13. N39/N40/N41 执行记录（2026-09-07，第六期收官）
+
+> **N39 ✅**：方法名 71→79（L-1）；csg prompt 宣发 v2（polygon_prism/swept_arc 两首建 op、version 1/2 双门，L-6）；CSG_VERSION=1 死常量→CSG_VERSIONS=(1,2) 单源（L-7）。
+> **N40 ✅**：plane×6+path_type Literal（schema fail-fast，L-2；cut_round_hole 的 plane 保留 NonEmptyString——其支持命名面，收紧即破坏）；CSG _positive 排 NaN/inf/bool+守门用例（L-3）；rebuild_csg 注解对齐 DESTRUCTIVE（L-4）；_expand_long_path 重试一次+护栏用例（L-5）——**护栏自证价值**：重写时引入 size-vs-len 回归被 0297d77 旧护栏用例当场抓住，修复后判定统一为 len(buffer)。
+> **N41 ✅**：INDEX 四探针 ✅已完成 标注+probe_n33 表格断行顺手修复；tests/part_fakes.py 共享基座（RecordingExtension/BasePartModel/sw_with_model）三文件收敛（33 用例零改绿；主仓 tests 是包——import 走 tests.part_fakes）；**L-8c 裁决不做**：探针是取证留档，每支自包含是历史证据的忠实属性。
+> **第六期收官**：N35-N41 全 ✅——专家团审查 1H+4M+8L 全处置（含 2 项「明确不做」裁决：registry 样板、探针脚手架）。主仓基线 **557 passed + 105 subtests**；AGENTS 基线同 commit 刷新（N36 纪律首次实战）。
