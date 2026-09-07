@@ -10,7 +10,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from solidworks_mcp.solidworks_api import part
+from solidworks_mcp.solidworks_api import part_advanced as part
 
 PLANE = "前视基准面"
 
@@ -82,11 +82,11 @@ def _sw(model):
 def _patched(testcase):
     patches = [
         patch(
-            "solidworks_mcp.solidworks_api.part._select_plane",
+            "solidworks_mcp.solidworks_api.part_advanced._select_plane",
             return_value=PLANE,
         ),
         patch(
-            "solidworks_mcp.solidworks_api.part.latest_feature_name",
+            "solidworks_mcp.solidworks_api.part_advanced.latest_feature_name",
             return_value="草图1",
         ),
     ]

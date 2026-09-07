@@ -112,7 +112,10 @@ def apply_dome(
     IModelDoc2.InsertDome(height, ReverseDir, DoEllipticSurface) (the
     dynamic dispatch form marshals broken), and the tree diff is the
     verdict (⌀20 top + 5mm dome → 850.85mm³, exact spherical cap)."""
-    from solidworks_mcp.solidworks_api.part import _typed_doc2
+    from solidworks_mcp.utils.com import typed_or_dynamic
+
+    def _typed_doc2(model):
+        return typed_or_dynamic(model, "IModelDoc2")
 
     try:
         height_mm = positive_number("height_mm", height_mm)

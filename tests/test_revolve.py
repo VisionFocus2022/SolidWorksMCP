@@ -161,7 +161,7 @@ class TestCreateRevolved(unittest.TestCase):
         sw = Mock()
         sw.get_active_document.return_value = model
         with patch(
-            "solidworks_mcp.solidworks_api.part.get_part_template",
+            "solidworks_mcp.solidworks_api.part_support.get_part_template",
             return_value=None,
         ):
             # No active part and no template -> part creation fails.

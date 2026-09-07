@@ -29,7 +29,7 @@ class TestPartHelpers(unittest.TestCase):
         sw.get_active_document.return_value = model
         self.assertEqual(_get_or_create_part(sw), (model, False))
 
-    @patch("solidworks_mcp.solidworks_api.part.get_part_template", return_value="part.prtdot")
+    @patch("solidworks_mcp.solidworks_api.part_support.get_part_template", return_value="part.prtdot")
     def test_creates_part_from_template(self, _template):
         created = Mock()
         sw = Mock()
@@ -37,7 +37,7 @@ class TestPartHelpers(unittest.TestCase):
         sw.app.NewDocument.return_value = created
         self.assertEqual(_get_or_create_part(sw), (created, True))
 
-    @patch("solidworks_mcp.solidworks_api.part.get_part_template", return_value=None)
+    @patch("solidworks_mcp.solidworks_api.part_support.get_part_template", return_value=None)
     def test_missing_template_raises(self, _template):
         sw = Mock()
         sw.get_active_document.return_value = None

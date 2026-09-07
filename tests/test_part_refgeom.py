@@ -13,7 +13,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from solidworks_mcp.solidworks_api import decorations, part
+from solidworks_mcp.solidworks_api import decorations
+from solidworks_mcp.solidworks_api import part_advanced, part_refgeom as part
 
 FRONT = "前视基准面"
 TOP = "上视基准面"
@@ -140,11 +141,11 @@ class TestCreateRefPlane(unittest.TestCase):
         self.sw = _sw(self.model)
         patches = [
             patch(
-                "solidworks_mcp.solidworks_api.part._select_plane",
+                "solidworks_mcp.solidworks_api.part_refgeom._select_plane",
                 return_value=FRONT,
             ),
             patch(
-                "solidworks_mcp.solidworks_api.part.latest_feature_name",
+                "solidworks_mcp.solidworks_api.part_refgeom.latest_feature_name",
                 side_effect=_names("基准面1"),
             ),
         ]
@@ -192,7 +193,7 @@ class TestCreateRefAxis(unittest.TestCase):
     def _run(self, **overrides):
         names = _names("凸台-拉伸1", "基准轴1")
         with patch(
-            "solidworks_mcp.solidworks_api.part.latest_feature_name",
+            "solidworks_mcp.solidworks_api.part_refgeom.latest_feature_name",
             side_effect=lambda *a, **k: names.pop(0) if names else "基准轴1",
         ):
             return part.create_ref_axis(self.sw, face_name="Face1", **overrides)
@@ -221,7 +222,7 @@ class TestCreateRefAxis(unittest.TestCase):
     def test_rejection_is_structured(self):
         # Tree unchanged after the call → SW refused the axis
         with patch(
-            "solidworks_mcp.solidworks_api.part.latest_feature_name",
+            "solidworks_mcp.solidworks_api.part_refgeom.latest_feature_name",
             return_value="凸台-拉伸1",
         ):
             result = part.create_ref_axis(self.sw, face_name="Face1")
@@ -234,7 +235,7 @@ class TestCreateRib(unittest.TestCase):
         self.model = FakeModel()
         self.sw = _sw(self.model)
         extrude = patch(
-            "solidworks_mcp.solidworks_api.part._extrude_sketch",
+            "solidworks_mcp.solidworks_api.part_advanced._extrude_sketch",
             side_effect=lambda model, height: (
                 self.model.extrudes.append(height),
                 SimpleNamespace(Name="凸台-拉伸2"),
@@ -246,7 +247,7 @@ class TestCreateRib(unittest.TestCase):
 
     def _patch_latest(self, *names):
         p = patch(
-            "solidworks_mcp.solidworks_api.part.latest_feature_name",
+            "solidworks_mcp.solidworks_api.part_advanced.latest_feature_name",
             side_effect=_names(*names),
         )
         p.start()
@@ -255,10 +256,10 @@ class TestCreateRib(unittest.TestCase):
     def test_contract_offset_plane_rect_and_extrude(self):
         self._patch_latest("基准面1")
         with patch(
-            "solidworks_mcp.solidworks_api.part.select_plane",
+            "solidworks_mcp.solidworks_api.part_advanced.select_plane",
             return_value=TOP,
         ) as mock_select:
-            result = part.create_rib(
+            result = part_advanced.create_rib(
                 self.sw,
                 length_mm=60.0,
                 height_mm=10.0,
@@ -289,10 +290,10 @@ class TestCreateRib(unittest.TestCase):
     def test_base_z_zero_sketches_on_top_plane_itself(self):
         self._patch_latest()
         with patch(
-            "solidworks_mcp.solidworks_api.part.select_plane",
+            "solidworks_mcp.solidworks_api.part_advanced.select_plane",
             return_value=TOP,
         ):
-            result = part.create_rib(
+            result = part_advanced.create_rib(
                 self.sw, length_mm=30.0, height_mm=8.0, thickness_mm=4.0
             )
         self.assertTrue(result["success"], result)
@@ -306,7 +307,7 @@ class TestCreateRib(unittest.TestCase):
             dict(length_mm=30, height_mm=8, thickness_mm=4, base_z_mm=-1),
         ]
         for kwargs in cases:
-            result = part.create_rib(self.sw, **kwargs)
+            result = part_advanced.create_rib(self.sw, **kwargs)
             self.assertFalse(result["success"], kwargs)
             self.assertEqual(result["error"]["code"], "INVALID_PARAMETER", kwargs)
 

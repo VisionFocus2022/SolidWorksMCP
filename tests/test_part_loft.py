@@ -9,7 +9,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from solidworks_mcp.solidworks_api import part
+from solidworks_mcp.solidworks_api import part_advanced as part
 
 PLANE = "前视基准面"
 
@@ -104,11 +104,11 @@ class TestCreateSweptArc(unittest.TestCase):
         self.sw = _sw(self.model)
         patches = [
             patch(
-                "solidworks_mcp.solidworks_api.part._select_plane",
+                "solidworks_mcp.solidworks_api.part_advanced._select_plane",
                 return_value=PLANE,
             ),
             patch(
-                "solidworks_mcp.solidworks_api.part.latest_feature_name",
+                "solidworks_mcp.solidworks_api.part_advanced.latest_feature_name",
                 side_effect=_names("草图1"),
             ),
         ]
@@ -198,11 +198,11 @@ class TestCreateLoft(unittest.TestCase):
         self.sw = _sw(self.model)
         patches = [
             patch(
-                "solidworks_mcp.solidworks_api.part._select_plane",
+                "solidworks_mcp.solidworks_api.part_advanced._select_plane",
                 return_value=PLANE,
             ),
             patch(
-                "solidworks_mcp.solidworks_api.part.latest_feature_name",
+                "solidworks_mcp.solidworks_api.part_advanced.latest_feature_name",
                 side_effect=_names("草图1", "基准面1", "草图2", "草图2", "放样1"),
             ),
         ]
@@ -241,7 +241,7 @@ class TestCreateLoft(unittest.TestCase):
 
     def test_three_sections_two_refplanes(self):
         with patch(
-            "solidworks_mcp.solidworks_api.part.latest_feature_name",
+            "solidworks_mcp.solidworks_api.part_advanced.latest_feature_name",
             side_effect=_names(
                 "草图1", "基准面1", "草图2", "基准面2", "草图3", "草图3", "放样1"
             ),
@@ -284,7 +284,7 @@ class TestCreateLoft(unittest.TestCase):
         # Blend2 returns None even on success; rejection shows as an
         # unchanged tree (before == after).
         with patch(
-            "solidworks_mcp.solidworks_api.part.latest_feature_name",
+            "solidworks_mcp.solidworks_api.part_advanced.latest_feature_name",
             side_effect=_names("草图1", "基准面1", "草图2", "草图2", "草图2"),
         ):
             result = part.create_loft(
