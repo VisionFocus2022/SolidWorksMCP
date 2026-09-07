@@ -10,6 +10,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from tests.part_fakes import BasePartModel, sw_with_model
 from solidworks_mcp.solidworks_api import part_advanced as part
 
 PLANE = "前视基准面"
@@ -38,45 +39,11 @@ class FakeFeatureManager:
         return SimpleNamespace(Name="凸台-拉伸1")
 
 
-class FakeExtension:
+class FakeModel(BasePartModel):
     def __init__(self):
-        self.selects = []
-
-    def SelectByID2(self, name, sel_type, x, y, z, append, mark, callout, opts):
-        self.selects.append((name, sel_type, append, mark))
-        return True
-
-
-class FakeModel:
-    def __init__(self):
+        super().__init__()
         self.sketch = FakeSketchManager()
         self.fm = FakeFeatureManager()
-        self.ext = FakeExtension()
-
-    @property
-    def GetType(self):
-        return 1  # swDocPART
-
-    @property
-    def SketchManager(self):
-        return self.sketch
-
-    @property
-    def FeatureManager(self):
-        return self.fm
-
-    @property
-    def Extension(self):
-        return self.ext
-
-    def ClearSelection2(self, all):
-        pass
-
-
-def _sw(model):
-    sw = Mock()
-    sw.get_active_document.return_value = model
-    return sw
 
 
 def _patched(testcase):
@@ -98,7 +65,7 @@ def _patched(testcase):
 class TestCreatePolygon(unittest.TestCase):
     def setUp(self):
         self.model = FakeModel()
-        self.sw = _sw(self.model)
+        self.sw = sw_with_model(self.model)
         _patched(self)
 
     def test_contract_eight_scalars_in_metres(self):
@@ -159,7 +126,7 @@ class TestCreatePolygon(unittest.TestCase):
 class TestCreateSlot(unittest.TestCase):
     def setUp(self):
         self.model = FakeModel()
-        self.sw = _sw(self.model)
+        self.sw = sw_with_model(self.model)
         _patched(self)
 
     def test_contract_fourteen_params_line_type(self):

@@ -13,6 +13,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from tests.part_fakes import BasePartModel, sw_with_model
 from solidworks_mcp.solidworks_api import decorations
 from solidworks_mcp.solidworks_api import part_advanced, part_refgeom as part
 
@@ -38,15 +39,6 @@ class FakeFeatureManager:
     def InsertRefPlane(self, *args):
         self.calls.append(("InsertRefPlane",) + args)
         return SimpleNamespace(Name="基准面1")
-
-
-class FakeExtension:
-    def __init__(self):
-        self.selects = []
-
-    def SelectByID2(self, name, sel_type, x, y, z, append, mark, callout, opts):
-        self.selects.append((name, sel_type, append, mark))
-        return True
 
 
 class FakeSurface:
@@ -79,33 +71,14 @@ class FakeBody:
         return self._faces[0] if self._faces else None
 
 
-class FakeModel:
+class FakeModel(BasePartModel):
     def __init__(self, faces=()):
+        super().__init__()
         self.sketch = FakeSketchManager()
         self.fm = FakeFeatureManager()
-        self.ext = FakeExtension()
         self._faces = list(faces)
         self.insert_axis_fired = False
         self.dome_calls = []
-
-    @property
-    def GetType(self):
-        return 1  # swDocPART
-
-    @property
-    def SketchManager(self):
-        return self.sketch
-
-    @property
-    def FeatureManager(self):
-        return self.fm
-
-    @property
-    def Extension(self):
-        return self.ext
-
-    def ClearSelection2(self, all):
-        pass
 
     def GetBodies2(self, kind, visible):
         return [FakeBody(self._faces)]
@@ -125,12 +98,6 @@ class FakeModel:
         return SimpleNamespace(Name="圆顶1")
 
 
-def _sw(model):
-    sw = Mock()
-    sw.get_active_document.return_value = model
-    return sw
-
-
 def _names(*names):
     return list(names)
 
@@ -138,7 +105,7 @@ def _names(*names):
 class TestCreateRefPlane(unittest.TestCase):
     def setUp(self):
         self.model = FakeModel()
-        self.sw = _sw(self.model)
+        self.sw = sw_with_model(self.model)
         patches = [
             patch(
                 "solidworks_mcp.solidworks_api.part_refgeom._select_plane",
@@ -188,7 +155,7 @@ class TestCreateRefAxis(unittest.TestCase):
     def setUp(self):
         self.face = FakeFace("Face1")
         self.model = FakeModel(faces=[self.face])
-        self.sw = _sw(self.model)
+        self.sw = sw_with_model(self.model)
 
     def _run(self, **overrides):
         names = _names("凸台-拉伸1", "基准轴1")
@@ -233,7 +200,7 @@ class TestCreateRefAxis(unittest.TestCase):
 class TestCreateRib(unittest.TestCase):
     def setUp(self):
         self.model = FakeModel()
-        self.sw = _sw(self.model)
+        self.sw = sw_with_model(self.model)
         extrude = patch(
             "solidworks_mcp.solidworks_api.part_advanced._extrude_sketch",
             side_effect=lambda model, height: (
@@ -316,7 +283,7 @@ class TestApplyDome(unittest.TestCase):
     def setUp(self):
         self.face = FakeFace("Face1")
         self.model = FakeModel(faces=[self.face])
-        self.sw = _sw(self.model)
+        self.sw = sw_with_model(self.model)
 
     def test_contract_named_face_mark1_and_typed_dome(self):
         names = _names("凸台-拉伸1", "圆顶1")

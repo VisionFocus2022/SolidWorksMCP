@@ -9,6 +9,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from tests.part_fakes import BasePartModel, sw_with_model
 from solidworks_mcp.solidworks_api import part_advanced as part
 
 PLANE = "前视基准面"
@@ -48,49 +49,15 @@ class FakeFeatureManager:
         return SimpleNamespace(Name="基准面1")
 
 
-class FakeExtension:
+class FakeModel(BasePartModel):
     def __init__(self):
-        self.selects = []
-
-    def SelectByID2(self, name, sel_type, x, y, z, append, mark, callout, opts):
-        self.selects.append((name, sel_type, append, mark))
-        return True
-
-
-class FakeModel:
-    def __init__(self):
+        super().__init__()
         self.sketch = FakeSketchManager()
         self.fm = FakeFeatureManager()
-        self.ext = FakeExtension()
-
-    @property
-    def GetType(self):
-        return 1  # swDocPART
-
-    @property
-    def SketchManager(self):
-        return self.sketch
-
-    @property
-    def FeatureManager(self):
-        return self.fm
-
-    @property
-    def Extension(self):
-        return self.ext
-
-    def ClearSelection2(self, all):
-        self.ext.clears = getattr(self.ext, "clears", 0) + 1
 
     def InsertProtrusionBlend2(self, *args):
         # Blend boss lives on IModelDoc2 (not the feature manager).
         return self.fm.InsertProtrusionBlend2(*args)
-
-
-def _sw(model):
-    sw = Mock()
-    sw.get_active_document.return_value = model
-    return sw
 
 
 def _names(*names):
@@ -101,7 +68,7 @@ def _names(*names):
 class TestCreateSweptArc(unittest.TestCase):
     def setUp(self):
         self.model = FakeModel()
-        self.sw = _sw(self.model)
+        self.sw = sw_with_model(self.model)
         patches = [
             patch(
                 "solidworks_mcp.solidworks_api.part_advanced._select_plane",
@@ -195,7 +162,7 @@ class TestCreateSweptArc(unittest.TestCase):
 class TestCreateLoft(unittest.TestCase):
     def setUp(self):
         self.model = FakeModel()
-        self.sw = _sw(self.model)
+        self.sw = sw_with_model(self.model)
         patches = [
             patch(
                 "solidworks_mcp.solidworks_api.part_advanced._select_plane",
