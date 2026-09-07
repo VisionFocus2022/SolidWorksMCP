@@ -14,6 +14,10 @@ from solidworks_mcp.solidworks_api.constants import (
     swFileSaveErrorNone,
     swSaveAsOptions_Silent,
 )
+from solidworks_mcp.solidworks_api.save_io import (
+    persist_part_save,
+    prepare_part_save,
+)
 from solidworks_mcp.solidworks_api.geometry import latest_feature_name, mm_to_m, select_plane
 from solidworks_mcp.solidworks_api.part_support import (
     TOP_PLANE_CANDIDATES,
@@ -100,12 +104,9 @@ def create_swept(
                 return error_response(
                     "line path needs length_mm > 0", code="INVALID_PARAMETER"
                 )
-        if save_path:
-            valid, message = validate_output_file(
-                save_path, {".sldprt"}, overwrite_confirm
-            )
-            if not valid:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
+        message = prepare_part_save(save_path, overwrite_confirm)
+        if message:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
 
         model, _was_created = _get_or_create_part(sw_app)
         if _select_plane(model) is None:
@@ -146,17 +147,14 @@ def create_swept(
             True,   # Direction
         )
         if feature is None:
-            return error_response("Swept feature creation rejected")
+            return error_response(
+                "Swept feature creation rejected", code="SW_API_ERROR"
+            )
 
         result = {"feature_name": feature.Name}
-        if save_path:
-            ok, message, sink_path = ensure_sink_path(save_path)
-            if not ok:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
-            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
-            if save_result != swFileSaveErrorNone:
-                return error_response(f"SaveAs3 failed with code {save_result}")
-            result["saved_to"] = save_path
+        code, message = persist_part_save(model, save_path, result)
+        if code:
+            return error_response(message, code=code)
 
         return success_response(
             data=result,
@@ -205,12 +203,9 @@ def create_loft(
                 "Only the front plane loft is supported",
                 code="INVALID_PARAMETER",
             )
-        if save_path:
-            valid, message = validate_output_file(
-                save_path, {".sldprt"}, overwrite_confirm
-            )
-            if not valid:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
+        message = prepare_part_save(save_path, overwrite_confirm)
+        if message:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
 
         model, _was_created = _get_or_create_part(sw_app)
         base_plane = _select_plane(model)
@@ -265,14 +260,9 @@ def create_loft(
             return error_response("Loft feature creation rejected")
 
         result = {"feature_name": after}
-        if save_path:
-            ok, message, sink_path = ensure_sink_path(save_path)
-            if not ok:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
-            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
-            if save_result != swFileSaveErrorNone:
-                return error_response(f"SaveAs3 failed with code {save_result}")
-            result["saved_to"] = save_path
+        code, message = persist_part_save(model, save_path, result)
+        if code:
+            return error_response(message, code=code)
 
         return success_response(
             data=result,
@@ -367,7 +357,9 @@ def create_rib(
 
         feature = _extrude_sketch(model, mm_to_m(height_mm))
         if feature is None:
-            return error_response("Extrusion feature creation failed")
+            return error_response(
+                "Extrusion feature creation failed", code="SW_API_ERROR"
+            )
 
         return success_response(
             data={"feature_name": feature.Name},
@@ -414,12 +406,9 @@ def create_polygon(
                 "Only the front plane polygon is supported",
                 code="INVALID_PARAMETER",
             )
-        if save_path:
-            valid, message = validate_output_file(
-                save_path, {".sldprt"}, overwrite_confirm
-            )
-            if not valid:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
+        message = prepare_part_save(save_path, overwrite_confirm)
+        if message:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
 
         model, _was_created = _get_or_create_part(sw_app)
         if _select_plane(model) is None:
@@ -435,17 +424,14 @@ def create_polygon(
 
         feature = _extrude_sketch(model, mm_to_m(height_mm))
         if feature is None:
-            return error_response("Extrusion feature creation failed")
+            return error_response(
+                "Extrusion feature creation failed", code="SW_API_ERROR"
+            )
 
         result = {"feature_name": feature.Name}
-        if save_path:
-            ok, message, sink_path = ensure_sink_path(save_path)
-            if not ok:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
-            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
-            if save_result != swFileSaveErrorNone:
-                return error_response(f"SaveAs3 failed with code {save_result}")
-            result["saved_to"] = save_path
+        code, message = persist_part_save(model, save_path, result)
+        if code:
+            return error_response(message, code=code)
 
         return success_response(
             data=result,
@@ -493,12 +479,9 @@ def create_slot(
                 "Only the front plane slot is supported",
                 code="INVALID_PARAMETER",
             )
-        if save_path:
-            valid, message = validate_output_file(
-                save_path, {".sldprt"}, overwrite_confirm
-            )
-            if not valid:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
+        message = prepare_part_save(save_path, overwrite_confirm)
+        if message:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
 
         model, _was_created = _get_or_create_part(sw_app)
         if _select_plane(model) is None:
@@ -518,17 +501,14 @@ def create_slot(
 
         feature = _extrude_sketch(model, mm_to_m(height_mm))
         if feature is None:
-            return error_response("Extrusion feature creation failed")
+            return error_response(
+                "Extrusion feature creation failed", code="SW_API_ERROR"
+            )
 
         result = {"feature_name": feature.Name}
-        if save_path:
-            ok, message, sink_path = ensure_sink_path(save_path)
-            if not ok:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
-            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
-            if save_result != swFileSaveErrorNone:
-                return error_response(f"SaveAs3 failed with code {save_result}")
-            result["saved_to"] = save_path
+        code, message = persist_part_save(model, save_path, result)
+        if code:
+            return error_response(message, code=code)
 
         return success_response(
             data=result,

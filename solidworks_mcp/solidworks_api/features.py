@@ -20,7 +20,7 @@ from solidworks_mcp.solidworks_api.geometry import (
 )
 from solidworks_mcp.solidworks_api.properties import activate_configuration
 from solidworks_mcp.utils.common import error_response, success_response
-from solidworks_mcp.utils.com import call_or_value
+from solidworks_mcp.utils.com import call_or_value, typed_or_dynamic
 from solidworks_mcp.utils.validation import finite_number, positive_number
 
 logger = logging.getLogger(__name__)
@@ -422,25 +422,15 @@ _MIRROR_PLANES = {
 }
 
 
-def _typed_fm(model: Any) -> Any:
-    """Wrap FeatureManager in its makepy class when possible.
 
-    Long parameter lists (InsertMultiFaceDraft/InsertCutSwept5) marshal
-    unreliably through dynamic dispatch; the typed wrapper fixes that
-    (N8/N9 probes). Falls back to the dynamic object off-machine or when
-    gencache has no module.
+def _typed_fm(model: Any) -> Any:
+    """FeatureManager in its makepy class, falling back to dynamic (N8/N9).
+
+    Thin composition over utils.com since N37 (single-home makepy wrap).
     """
     fm = call_or_value(model, "FeatureManager")
-    try:
-        from win32com.client import gencache
+    return typed_or_dynamic(fm, "IFeatureManager")
 
-        mods = gencache.GetModuleForProgID("SldWorks.Application")
-        raw = getattr(fm, "_oleobj_", None)
-        if mods is not None and raw is not None:
-            return mods.IFeatureManager(raw)
-    except Exception:  # pragma: no cover - depends on host COM registry
-        pass
-    return fm
 
 
 def _find_face_by_name(model: Any, face_name: str) -> Optional[Any]:

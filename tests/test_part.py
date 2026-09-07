@@ -64,7 +64,7 @@ class TestPartCreation(unittest.TestCase):
         model.SaveAs3.return_value = 0
         get_part.return_value = (model, True)
         extrude.return_value = SimpleNamespace(Name="Boss-Extrude1")
-        with patch("solidworks_mcp.solidworks_api.part.validate_output_file", return_value=(True, "")):
+        with patch("solidworks_mcp.solidworks_api.save_io.validate_output_file", return_value=(True, "")):
             result = create_cylinder(Mock(), 20, 30, "part.sldprt")
         self.assertTrue(result["success"])
         circle.assert_called_once_with(model, 0.01)
@@ -73,7 +73,7 @@ class TestPartCreation(unittest.TestCase):
 
     def test_create_cylinder_rejects_invalid_dimensions_and_path(self):
         self.assertEqual(create_cylinder(Mock(), 0, 2)["error"]["code"], "INVALID_PARAMETER")
-        with patch("solidworks_mcp.solidworks_api.part.validate_output_file", return_value=(False, "bad path")):
+        with patch("solidworks_mcp.solidworks_api.save_io.validate_output_file", return_value=(False, "bad path")):
             result = create_cylinder(Mock(), 1, 2, "bad.sldprt")
         self.assertEqual(result["error"]["code"], "INVALID_OUTPUT_PATH")
 
@@ -115,7 +115,7 @@ class TestConeCreation(unittest.TestCase):
         model.SaveAs3.return_value = 0
         get_part.return_value = (model, True)
         extrude.return_value = SimpleNamespace(Name="Boss-Extrude1")
-        with patch("solidworks_mcp.solidworks_api.part.validate_output_file", return_value=(True, "")):
+        with patch("solidworks_mcp.solidworks_api.save_io.validate_output_file", return_value=(True, "")):
             result = create_cone(Mock(), 20, 10, 30, "cone.sldprt")
         self.assertTrue(result["success"])
         # Sketch carries the bottom radius: 20 mm -> 0.01 m.
@@ -166,7 +166,7 @@ class TestConeCreation(unittest.TestCase):
 
 
 class TestConeEdgeCases(unittest.TestCase):
-    @patch("solidworks_mcp.solidworks_api.part.validate_output_file", return_value=(False, "bad path"))
+    @patch("solidworks_mcp.solidworks_api.save_io.validate_output_file", return_value=(False, "bad path"))
     def test_create_cone_rejects_invalid_save_path(self, _validate):
         self.assertEqual(
             create_cone(Mock(), 20, 10, 30, "cone.sldprt")["error"]["code"],
@@ -178,8 +178,8 @@ class TestConeEdgeCases(unittest.TestCase):
     def test_create_cone_reports_missing_reference_plane(self, _part, _plane):
         self.assertIn("reference plane", create_cone(Mock(), 20, 10, 30)["message"])
 
-    @patch("solidworks_mcp.solidworks_api.part.ensure_sink_path")
-    @patch("solidworks_mcp.solidworks_api.part.validate_output_file", return_value=(True, ""))
+    @patch("solidworks_mcp.solidworks_api.save_io.ensure_sink_path")
+    @patch("solidworks_mcp.solidworks_api.save_io.validate_output_file", return_value=(True, ""))
     @patch("solidworks_mcp.solidworks_api.part._extrude_draft_sketch")
     @patch("solidworks_mcp.solidworks_api.part._create_circle_sketch")
     @patch("solidworks_mcp.solidworks_api.part._select_plane", return_value="Front Plane")

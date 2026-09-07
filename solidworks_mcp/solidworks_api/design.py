@@ -23,6 +23,10 @@ from solidworks_mcp.solidworks_api.geometry import (
     select_plane,
     walk_feature_names,
 )
+from solidworks_mcp.solidworks_api.save_io import (
+    persist_part_save,
+    prepare_part_save,
+)
 from solidworks_mcp.solidworks_api.part import (
     create_box,
     create_cone,
@@ -108,17 +112,13 @@ def _save_active_model(
     if not save_path:
         return None
 
-    allowed, msg = validate_output_file(save_path, {".sldprt"}, overwrite_confirm)
-    if not allowed:
+    msg = prepare_part_save(save_path, overwrite_confirm)
+    if msg:
         return error_response(msg, code="INVALID_OUTPUT_PATH")
 
-    ok, message, sink_path = ensure_sink_path(save_path)
-    if not ok:
-        return error_response(message, code="INVALID_OUTPUT_PATH")
-    save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
-    if save_result != swFileSaveErrorNone:
-        return error_response(f"SaveAs3 failed with code {save_result}")
-    result["saved_to"] = save_path
+    code, message = persist_part_save(model, save_path, result)
+    if code:
+        return error_response(message, code=code)
     return None
 
 
@@ -129,12 +129,9 @@ def create_new_part(
 ) -> dict:
     """Create a blank part document using the configured SolidWorks template."""
     try:
-        if save_path:
-            valid, message = validate_output_file(
-                save_path, {".sldprt"}, overwrite_confirm
-            )
-            if not valid:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
+        message = prepare_part_save(save_path, overwrite_confirm)
+        if message:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
         template = get_part_template()
         if not template:
             return error_response("Could not find a valid SolidWorks part template (.prtdot)")

@@ -50,9 +50,9 @@ class TestDesignHelpers(unittest.TestCase):
         model = Mock()
         result = {}
         self.assertIsNone(_save_active_model(model, None, False, result))
-        with patch("solidworks_mcp.solidworks_api.design.validate_output_file", return_value=(False, "bad")):
+        with patch("solidworks_mcp.solidworks_api.save_io.validate_output_file", return_value=(False, "bad")):
             self.assertEqual(_save_active_model(model, "bad.sldprt", False, result)["error"]["code"], "INVALID_OUTPUT_PATH")
-        with patch("solidworks_mcp.solidworks_api.design.validate_output_file", return_value=(True, "")):
+        with patch("solidworks_mcp.solidworks_api.save_io.validate_output_file", return_value=(True, "")):
             model.SaveAs3.return_value = 5
             self.assertFalse(_save_active_model(model, "part.sldprt", False, result)["success"])
             model.SaveAs3.return_value = 0
@@ -76,7 +76,7 @@ class TestNewPartAndPlate(unittest.TestCase):
         self.assertTrue(create_new_part(sw)["success"])
 
     def test_new_part_validates_output_before_creation(self):
-        with patch("solidworks_mcp.solidworks_api.design.validate_output_file", return_value=(False, "bad")):
+        with patch("solidworks_mcp.solidworks_api.save_io.validate_output_file", return_value=(False, "bad")):
             result = create_new_part(Mock(), "bad.sldprt")
         self.assertEqual(result["error"]["code"], "INVALID_OUTPUT_PATH")
 
@@ -162,7 +162,7 @@ class TestDesignPlanBranches(unittest.TestCase):
         model.SaveAs3.return_value = 0
         sw = Mock()
         sw.get_active_document.return_value = model
-        with patch("solidworks_mcp.solidworks_api.design.validate_output_file", return_value=(True, "")):
+        with patch("solidworks_mcp.solidworks_api.save_io.validate_output_file", return_value=(True, "")):
             result = execute_design_plan(sw, [{"type": "new_part"}], "part.sldprt")
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["saved_to"], "part.sldprt")

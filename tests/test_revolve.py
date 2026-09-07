@@ -85,10 +85,10 @@ class TestCreateRevolved(unittest.TestCase):
             "solidworks_mcp.solidworks_api.part._select_plane",
             return_value="前视基准面",
         ), patch(
-            "solidworks_mcp.solidworks_api.part.validate_output_file",
+            "solidworks_mcp.solidworks_api.save_io.validate_output_file",
             return_value=(True, ""),
         ), patch(
-            "solidworks_mcp.solidworks_api.part.ensure_sink_path",
+            "solidworks_mcp.solidworks_api.save_io.ensure_sink_path",
             return_value=(True, "", "ring.sldprt"),
         ):
             saved = create_revolved(sw, 40, 20, 10, save_path="ring.sldprt")
@@ -115,7 +115,7 @@ class TestCreateRevolved(unittest.TestCase):
         )
         sw = Mock()
         with patch(
-            "solidworks_mcp.solidworks_api.part.validate_output_file",
+            "solidworks_mcp.solidworks_api.save_io.validate_output_file",
             return_value=(False, "bad path"),
         ):
             result = create_revolved(sw, 40, 20, 10, save_path="ring.sldprt")
@@ -128,10 +128,10 @@ class TestCreateRevolved(unittest.TestCase):
             "solidworks_mcp.solidworks_api.part._select_plane",
             return_value="前视基准面",
         ), patch(
-            "solidworks_mcp.solidworks_api.part.validate_output_file",
+            "solidworks_mcp.solidworks_api.save_io.validate_output_file",
             return_value=(True, ""),
         ), patch(
-            "solidworks_mcp.solidworks_api.part.ensure_sink_path",
+            "solidworks_mcp.solidworks_api.save_io.ensure_sink_path",
             return_value=(False, "bad sink", None),
         ):
             result = create_revolved(sw, 40, 20, 10, save_path="ring.sldprt")

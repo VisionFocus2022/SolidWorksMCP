@@ -656,27 +656,9 @@ _ROTATIONS = {
 }
 
 
-def _wrap_static(obj: Any, interface: str) -> Optional[Any]:
-    """Wrap a dynamic dispatch in its makepy static class (N5 pattern).
-
-    Transform calls are unreachable through dynamic dispatch (N8 diag
-    probe: ``CreateTransform`` with a VARIANT array raises
-    RPC_E_SERVER_FAULT); the generated classes accept the raw
-    ``PyIDispatch`` and restore the typed vtable signatures.
-    """
-    try:
-        from win32com.client import gencache
-
-        mods = gencache.GetModuleForProgID("SldWorks.Application")
-        raw = getattr(obj, "_oleobj_", None)
-        # Mock doubles auto-attribute ``_oleobj_``; only a real PyIDispatch
-        # can be handed to the generated class.
-        if mods is None or type(raw).__name__ != "PyIDispatch":
-            return None
-        return getattr(mods, interface)(raw)
-    except Exception:
-        logger.debug("%s static wrap failed", interface, exc_info=True)
-        return None
+# N37: the makepy static wrapper has a single home in utils.com;
+# the local copy (N5 pattern, with the PyIDispatch guard) moved there.
+from solidworks_mcp.utils.com import static_wrap as _wrap_static  # noqa: E402,F401
 
 
 def _apply_component_xform(

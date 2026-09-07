@@ -15,6 +15,10 @@ from solidworks_mcp.solidworks_api.constants import (
     swFileSaveErrorNone,
     swSaveAsOptions_Silent,
 )
+from solidworks_mcp.solidworks_api.save_io import (
+    persist_part_save,
+    prepare_part_save,
+)
 from solidworks_mcp.solidworks_api.geometry import (
     latest_feature_name,
     mm_to_m,
@@ -154,12 +158,9 @@ def create_cylinder(
     try:
         diameter = positive_number("diameter", diameter)
         height = positive_number("height", height)
-        if save_path:
-            valid, message = validate_output_file(
-                save_path, {".sldprt"}, overwrite_confirm
-            )
-            if not valid:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
+        message = prepare_part_save(save_path, overwrite_confirm)
+        if message:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
 
         model, _was_created = _get_or_create_part(sw_app)
 
@@ -178,14 +179,9 @@ def create_cylinder(
 
         result = {"feature_name": feature.Name}
 
-        if save_path:
-            ok, message, sink_path = ensure_sink_path(save_path)
-            if not ok:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
-            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
-            if save_result != swFileSaveErrorNone:
-                return error_response(f"SaveAs3 failed with code {save_result}")
-            result["saved_to"] = save_path
+        code, message = persist_part_save(model, save_path, result)
+        if code:
+            return error_response(message, code=code)
 
         return success_response(
             data=result,
@@ -213,12 +209,9 @@ def create_box(
         width = positive_number("width", width)
         depth = positive_number("depth", depth)
         height = positive_number("height", height)
-        if save_path:
-            valid, message = validate_output_file(
-                save_path, {".sldprt"}, overwrite_confirm
-            )
-            if not valid:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
+        message = prepare_part_save(save_path, overwrite_confirm)
+        if message:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
 
         model, _was_created = _get_or_create_part(sw_app)
 
@@ -238,14 +231,9 @@ def create_box(
 
         result = {"feature_name": feature.Name}
 
-        if save_path:
-            ok, message, sink_path = ensure_sink_path(save_path)
-            if not ok:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
-            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
-            if save_result != swFileSaveErrorNone:
-                return error_response(f"SaveAs3 failed with code {save_result}")
-            result["saved_to"] = save_path
+        code, message = persist_part_save(model, save_path, result)
+        if code:
+            return error_response(message, code=code)
 
         return success_response(
             data=result,
@@ -289,12 +277,9 @@ def create_cone(
                 "top_diameter must be a non-negative number",
                 code="INVALID_PARAMETER",
             )
-        if save_path:
-            valid, message = validate_output_file(
-                save_path, {".sldprt"}, overwrite_confirm
-            )
-            if not valid:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
+        message = prepare_part_save(save_path, overwrite_confirm)
+        if message:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
 
         model, _was_created = _get_or_create_part(sw_app)
 
@@ -323,14 +308,9 @@ def create_cone(
             "draft_angle_degrees": round(math.degrees(draft_angle_rad), 4),
         }
 
-        if save_path:
-            ok, message, sink_path = ensure_sink_path(save_path)
-            if not ok:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
-            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
-            if save_result != swFileSaveErrorNone:
-                return error_response(f"SaveAs3 failed with code {save_result}")
-            result["saved_to"] = save_path
+        code, message = persist_part_save(model, save_path, result)
+        if code:
+            return error_response(message, code=code)
 
         return success_response(
             data=result,
@@ -379,12 +359,9 @@ def create_revolved(
                 "Only the front plane revolve is supported",
                 code="INVALID_PARAMETER",
             )
-        if save_path:
-            valid, message = validate_output_file(
-                save_path, {".sldprt"}, overwrite_confirm
-            )
-            if not valid:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
+        message = prepare_part_save(save_path, overwrite_confirm)
+        if message:
+            return error_response(message, code="INVALID_OUTPUT_PATH")
 
         model, _was_created = _get_or_create_part(sw_app)
 
@@ -434,14 +411,9 @@ def create_revolved(
 
         result = {"feature_name": feature.Name}
 
-        if save_path:
-            ok, message, sink_path = ensure_sink_path(save_path)
-            if not ok:
-                return error_response(message, code="INVALID_OUTPUT_PATH")
-            save_result = model.SaveAs3(sink_path, 0, swSaveAsOptions_Silent)
-            if save_result != swFileSaveErrorNone:
-                return error_response(f"SaveAs3 failed with code {save_result}")
-            result["saved_to"] = save_path
+        code, message = persist_part_save(model, save_path, result)
+        if code:
+            return error_response(message, code=code)
 
         return success_response(
             data=result,
