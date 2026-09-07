@@ -20,7 +20,7 @@ MCP 服务器（官方 Python SDK，stdio）：把 SolidWorks 2026 COM 自动化
 ## 测试与基线
 
 ```powershell
-venv\Scripts\python.exe -m pytest tests/ -q     # 542 passed + 105 subtests（~10s，2026-09-06 expert-sweep 修复批1 后）
+venv\Scripts\python.exe -m pytest tests/ -q     # 548 passed + 105 subtests（~9s，2026-09-07 N35 拆分后）
 venv\Scripts\python.exe tools\e2e_sw_smoke.py   # 实机 e2e（需 SW 运行；tracked 台账 output/e2e-summary.md）
 ```
 
@@ -32,6 +32,8 @@ venv\Scripts\python.exe tools\e2e_sw_smoke.py   # 实机 e2e（需 SW 运行；t
 - capabilities 与实现由 `tests/test_capabilities_sync.py` 锁定，勿手写漂移。
 - CI runner 的 tempfile 基址是 8.3 短名（RUNNER~1）：路径断言必须走
   `normalize_path` 规范形（tests/test_hardening.py 的教训，2026-09-02）。
+- **基线回填纪律（N36/M-4）**：凡增减测试数的任务，**同一个 commit** 内刷新本节数字与日期——基线以最新实测为准，旧快照即漂移（08-31 审查 G3 与 09-06 专家团 M-4 两次同源复发）。
+- **多会话协调（N36/M-4）**：动 `output/` 或共享文档前先 `git status` 确认无并行会话未提交产物（2026-09-06 审查 JSON 曾被并行会话清理）；本机常有多会话并行（主计划线/治理线/S5 线）。
 - **即席改动验证约定**：凡不经 N 系列计划的即席源码/配置改动，收尾回复必须
   贴出所跑的验证命令与退出码（未验证须写明原因）——让改动正确性可被后来者
   凭记录核验（better-harness F5，2026-09-06）。
