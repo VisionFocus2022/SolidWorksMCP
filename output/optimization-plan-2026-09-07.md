@@ -67,10 +67,6 @@
 - [x] 3. part.py 删迁出段 + 尾部 re-export + 行数核验（521<800 ✓；advanced 548/refgeom 144/support 132）
 - [x] 4. decorations 改用 utils.com（清偿私有引用）；三测试文件 patch 点更新（含 test_part/test_revolve 的 get_part_template→part_support、refgeom 测试 rib 类指 advanced）
 - [x] 5. 全套绿（**548 passed + 105 subtests**，+6 utils_com 用例）+ e2e_n29 实机抽验 PASS（dome/rib 0.000% 门面路径）+ commit `d8e4857` + 回填
-- [ ] 2. part_refgeom.py 迁出三符号 + part_advanced.py 迁出五特征族（import part 的共享 helpers）
-- [ ] 3. part.py 删迁出段 + 尾部 re-export + 行数核验（<800）
-- [ ] 4. decorations 改用 utils.com（清偿私有引用）；三测试文件 patch 点更新
-- [ ] 5. 全套绿（542+105 不减）+ e2e_n29 实机抽验 + commit + 回填
 
 ## 4. N36 基线权威化（P1，0.5h）
 
