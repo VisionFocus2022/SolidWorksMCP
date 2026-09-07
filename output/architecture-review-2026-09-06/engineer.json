@@ -1,0 +1,41 @@
+{
+  "agent_status": "OK",
+  "verdict": "N28-N30 新增代码单函数质量扎实（统一验证骨架+实机契约 docstring+完备单测），但 part.py 1243 行已击穿 <1100 治理红线（E-12 基线 1011，+232）；save_path 样板在 part.py 复制≥6 处而 design._save_active_model 已有现成抽象；decorations.apply_dome 惰性 import part._typed_doc2 实查无循环（part.py L7-28 不 import decorations/design）但跨模块取私有符号且 makepy 包裹逻辑全仓已 3 处重复；CSG v2 stack_top=None 哨兵纪律良好但对未来 op 扩展脆弱；registry plane 注解 NonEmptyString/str 三风格混用。无 Bash 工具，行数来自 codegraph verbatim 行号。",
+  "findings": [
+    {
+      "id": "SE-1",
+      "severity": "HIGH",
+      "title": "part.py 1243 行击穿 <1100 治理红线（E-12 基线 1011）",
+      "evidence": "part.py 最后函数 get_mass_properties L1208-1242，文件止于 L1243；N28-N30 新增 create_swept L595-708 / create_loft L711-824 / create_ref_plane L827-872 / create_ref_axis L900-949 / create_rib L952-1045 / create_polygon L1048-1122 / create_slot L1125-1205 + _typed_doc2 L563-573 + _sweep_path_sketch L576-592，累计约 +590 行。registry/part.py ~633 行 < 800 达标。",
+      "recommendation": "按域拆分：primitives(box/cylinder/cone/revolved/polygon/slot)、sweep_loft、refgeom(ref_plane/ref_axis)、_typed_doc2→utils/com.py。"
+    },
+    {
+      "id": "SE-2",
+      "severity": "MEDIUM",
+      "title": "save_path 双块样板 part.py 内≥6 处复制，design.py 已有提取好的等价实现",
+      "evidence": "前置校验块逐字重复：create_cylinder L258-263、create_box L317-322、create_swept L637-642、create_loft L742-747、create_polygon L1076-1081、create_slot L1155-1160；尾部保存块：create_cylinder L282-289、create_box L342-349、create_cone L427-434、create_swept L686-693、create_polygon L1100-1107、create_slot L1183-1190。design.py _save_active_model L102-122 即现成抽象。另错误码不一致：create_swept L682-683 与 create_slot/polygon L1096-1097/L1179-1180 的 feature 失败响应无 code，而 create_ref_plane L852-861、create_ref_axis L927-938 带 code=SW_API_ERROR。",
+      "recommendation": "上提共享 save helper（utils 层），错误响应统一带 code。"
+    },
+    {
+      "id": "SE-3",
+      "severity": "MEDIUM",
+      "title": "decorations.apply_dome 惰性 import part._typed_doc2：无循环依赖，但跨模块取私有符号 + makepy 静态包裹逻辑全仓 3 处重复",
+      "evidence": "decorations.py L115 函数内 from ...part import _typed_doc2，L134 调用。实查 part.py 模块级 import 全集 L7-28 不含 decorations 与 design，依赖图为无环 DAG。同构实现已 3 处：part.py L563-573、assembly.py _wrap_static L659-679（含 PyIDispatch 类型防误判，最完善）、features.py _typed_fm L425，另有 tools/probe_part/probe_n29_unblock.py L58-64 第 4 份。",
+      "recommendation": "以 _wrap_static 为蓝本上提 utils/com.py（static_wrap(obj,'IModelDoc2')），part/decorations/features 共用，为 SE-1 拆分扫清耦合。"
+    },
+    {
+      "id": "SE-4",
+      "severity": "MEDIUM",
+      "title": "CSG v2 stack_top=None 哨兵 + 6 分支 if/elif 长链：当前纪律良好，对未来 op 扩展脆弱",
+      "evidence": "design.py L932-933 初始化 0.0 带 None after swept_arc 注释；L1000 swept_arc 成功后置 None；消费点手工检查 L1002-1006(cylinder/cone)、L1043-1048(cut_cylinder) 均返回 INVALID_PARAMETER，收尾 L1073-1081 双处兜底。风险1：新增 op 分支漏检 None 时 L1013 z-stack_top 抛 TypeError 落入 L1085-1087 通用 except，报错退化。风险2：L1042 else 一律按 cut_cylinder 处理，未知 op 不落显式 unknown 分支——正确性完全依赖 _validate_csg_plan 前置拒绝。rebuild_csg_plan 单函数 L905-1087 共 180+ 行。",
+      "recommendation": "v3 扩展前重构为 op→handler 字典，handler 自带 stack_top 前置断言，未知 op 显式报 unknown。"
+    },
+    {
+      "id": "SE-5",
+      "severity": "LOW",
+      "title": "registry/part.py plane/path_type 注解三风格混用，未用 Literal 收紧 schema",
+      "evidence": "同语义参数 plane：cut_round_hole 用 NonEmptyString='top'（L151），而 revolved L186/swept L207/loft L232/polygon L256/slot L275/ref_plane L292 全为裸 str='front'；swept path_type L203 裸 str='arc' 而 part.py L614-617 只接受('arc','line')。5 个新工具实际只支持 front（part.py 运行期拒绝），无效值要到执行期才被拒。base.py L61-63 MateType=Literal[...] 已有先例。",
+      "recommendation": "plane 用 Literal['front']（多平面工具用 Literal['front','top',...]），path_type 用 Literal['arc','line']，schema 层 fail-fast。"
+    }
+  ]
+}
