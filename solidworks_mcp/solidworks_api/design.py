@@ -899,6 +899,134 @@ def _validate_csg_plan(plan: Any) -> Optional[str]:
     return None
 
 
+class _CsgPlanError(Exception):
+    """Plan-level rejection (INVALID_PARAMETER, no rollback)."""
+
+
+def _csg_op_box(sw_app, op, index, plan, stack_top):
+    x, y, z = (float(v) for v in op["at"])
+    if index != 0 or abs(x) > 1e-9 or abs(y) > 1e-9 or abs(z) > 1e-9:
+        raise _CsgPlanError(
+            "operation[0]: v1 requires the box to be the first op "
+            "at [0, 0, 0] (stacking starts at the origin)"
+        )
+    width, depth, height = (float(v) for v in op["size"])
+    result = part_module.create_box(sw_app, width, depth, height)
+    return result, height
+
+
+def _csg_op_polygon_prism(sw_app, op, index, plan, stack_top):
+    x, y, z = (float(v) for v in op["at"])
+    if index != 0 or abs(x) > 1e-9 or abs(y) > 1e-9 or abs(z) > 1e-9:
+        raise _CsgPlanError(
+            f"operation[{index}]: v2 polygon_prism is a first op only "
+            "at [0, 0, 0]"
+        )
+    result = part_module.create_polygon(
+        sw_app,
+        op["sides"],
+        float(op["circumradius"]),
+        float(op["height"]),
+        inscribed=op.get("inscribed", True),
+    )
+    return result, float(op["height"])
+
+
+def _csg_op_swept_arc(sw_app, op, index, plan, stack_top):
+    x, y, z = (float(v) for v in op["at"])
+    if index != 0 or abs(x) > 1e-9 or abs(y) > 1e-9 or abs(z) > 1e-9:
+        raise _CsgPlanError(
+            f"operation[{index}]: v2 swept_arc is a first op only "
+            "at [0, 0, 0]"
+        )
+    if len(plan["operations"]) != 1:
+        raise _CsgPlanError(
+            f"operation[{index}]: swept_arc admits no "
+            "following operations (no stacking axis)"
+        )
+    result = part_module.create_swept(
+        sw_app,
+        float(op["diameter"]),
+        "arc",
+        float(op["arc_radius"]),
+        float(op.get("angle_deg", 90.0)),
+    )
+    return result, None  # a torus segment has no stacking axis
+
+
+def _csg_op_stacked_solid(sw_app, op, index, plan, stack_top):
+    kind = op["op"]
+    x, y, z = (float(v) for v in op["at"])
+    if stack_top is None:
+        raise _CsgPlanError(
+            f"operation[{index}]: nothing stacks on a swept_arc"
+        )
+    if abs(x) > 1e-9 or abs(y) > 1e-9:
+        raise _CsgPlanError(
+            f"operation[{index}]: v1 stacks solids on the axis "
+            "(at.x/at.y must be 0)"
+        )
+    if abs(z - stack_top) > _Z_TOLERANCE:
+        raise _CsgPlanError(
+            f"operation[{index}]: at.z={z} does not match the "
+            f"current stack top {stack_top} (v1 supports "
+            "stacking only)"
+        )
+    if kind == "cylinder":
+        builder = (
+            part_module.create_cylinder
+            if stack_top == 0.0
+            else part_module.create_cylinder_on_face
+        )
+        result = builder(sw_app, op["diameter"], op["height"])
+    else:
+        builder = (
+            part_module.create_cone
+            if stack_top == 0.0
+            else part_module.create_cone_on_face
+        )
+        result = builder(
+            sw_app,
+            op["bottom_diameter"],
+            op["top_diameter"],
+            op["height"],
+        )
+    return result, z + float(op["height"])
+
+
+def _csg_op_cut_cylinder(sw_app, op, index, plan, stack_top):
+    x, y, _z = (float(v) for v in op["at"])
+    if stack_top is None:
+        raise _CsgPlanError(
+            f"operation[{index}]: cut_cylinder needs a stack "
+            "top (nothing follows a swept_arc)"
+        )
+    result = cut_round_hole(
+        sw_app,
+        op["diameter"],
+        x,
+        y,
+        "top",
+        op.get("depth"),
+        bool(op.get("through")),
+    )
+    return result, stack_top  # cuts never move the stack top
+
+
+#: op -> handler (N38, review M-3): every handler owns its stack-top
+#: precondition (a missed None check can no longer hide in a long elif
+#: chain), unknown ops hit the explicit fallback below, and each entry
+#: keeps the exact validation messages the contract tests pin.
+_CSG_HANDLERS = {
+    "box": _csg_op_box,
+    "polygon_prism": _csg_op_polygon_prism,
+    "swept_arc": _csg_op_swept_arc,
+    "cylinder": _csg_op_stacked_solid,
+    "cone": _csg_op_stacked_solid,
+    "cut_cylinder": _csg_op_cut_cylinder,
+}
+
+
 def rebuild_csg_plan(sw_app: SolidWorksApp, plan: dict) -> dict:
     """Rebuild a cross-engine CSG plan (contract v1) as an SW feature tree.
 
@@ -946,114 +1074,23 @@ def rebuild_csg_plan(sw_app: SolidWorksApp, plan: dict) -> dict:
         for index, op in enumerate(plan["operations"]):
             kind = op["op"]
             name = op["name"]
-            x, y, z = (float(v) for v in op["at"])
-
-            if kind == "box":
-                if index != 0 or abs(x) > 1e-9 or abs(y) > 1e-9 or abs(z) > 1e-9:
-                    return error_response(
-                        "operation[0]: v1 requires the box to be the first op "
-                        "at [0, 0, 0] (stacking starts at the origin)",
-                        code="INVALID_PARAMETER",
-                    )
-                width, depth, height = (float(v) for v in op["size"])
-                result = part_module.create_box(sw_app, width, depth, height)
-                if not result.get("success"):
-                    return _fail(result)
-                stack_top = height
-            elif kind in CSG_V2_OPS:
-                if index != 0 or abs(x) > 1e-9 or abs(y) > 1e-9 or abs(z) > 1e-9:
-                    return error_response(
-                        f"operation[{index}]: v2 {kind} is a first op only "
-                        "at [0, 0, 0]",
-                        code="INVALID_PARAMETER",
-                    )
-                if kind == "polygon_prism":
-                    result = part_module.create_polygon(
-                        sw_app,
-                        op["sides"],
-                        float(op["circumradius"]),
-                        float(op["height"]),
-                        inscribed=op.get("inscribed", True),
-                    )
-                    if not result.get("success"):
-                        return _fail(result)
-                    stack_top = float(op["height"])
-                else:  # swept_arc: a torus segment has no stacking axis
-                    if len(plan["operations"]) != 1:
-                        return error_response(
-                            f"operation[{index}]: swept_arc admits no "
-                            "following operations (no stacking axis)",
-                            code="INVALID_PARAMETER",
-                        )
-                    result = part_module.create_swept(
-                        sw_app,
-                        float(op["diameter"]),
-                        "arc",
-                        float(op["arc_radius"]),
-                        float(op.get("angle_deg", 90.0)),
-                    )
-                    if not result.get("success"):
-                        return _fail(result)
-                    stack_top = None
-            elif kind in ("cylinder", "cone"):
-                if stack_top is None:
-                    return error_response(
-                        f"operation[{index}]: nothing stacks on a swept_arc",
-                        code="INVALID_PARAMETER",
-                    )
-                if abs(x) > 1e-9 or abs(y) > 1e-9:
-                    return error_response(
-                        f"operation[{index}]: v1 stacks solids on the axis "
-                        "(at.x/at.y must be 0)",
-                        code="INVALID_PARAMETER",
-                    )
-                if abs(z - stack_top) > _Z_TOLERANCE:
-                    return error_response(
-                        f"operation[{index}]: at.z={z} does not match the "
-                        f"current stack top {stack_top} (v1 supports "
-                        "stacking only)",
-                        code="INVALID_PARAMETER",
-                    )
-                if kind == "cylinder":
-                    builder = (
-                        part_module.create_cylinder
-                        if stack_top == 0.0
-                        else part_module.create_cylinder_on_face
-                    )
-                    result = builder(sw_app, op["diameter"], op["height"])
-                else:
-                    builder = (
-                        part_module.create_cone
-                        if stack_top == 0.0
-                        else part_module.create_cone_on_face
-                    )
-                    result = builder(
-                        sw_app,
-                        op["bottom_diameter"],
-                        op["top_diameter"],
-                        op["height"],
-                    )
-                if not result.get("success"):
-                    return _fail(result)
-                stack_top = z + float(op["height"])
-            else:  # cut_cylinder
-                if stack_top is None:
-                    return error_response(
-                        f"operation[{index}]: cut_cylinder needs a stack "
-                        "top (nothing follows a swept_arc)",
-                        code="INVALID_PARAMETER",
-                    )
-                result = cut_round_hole(
-                    sw_app,
-                    op["diameter"],
-                    x,
-                    y,
-                    "top",
-                    op.get("depth"),
-                    bool(op.get("through")),
+            handler = _CSG_HANDLERS.get(kind)
+            if handler is None:
+                # _validate_csg_plan rejects unknowns first; this explicit
+                # fallback keeps dispatch safe even if the two ever drift.
+                return error_response(
+                    f"operation[{index}]: unknown op {kind!r} "
+                    f"(supported: {', '.join(CSG_OPS)})",
+                    code="INVALID_PARAMETER",
                 )
-                if not result.get("success"):
-                    return _fail(result)
+            try:
+                result, stack_top = handler(
+                    sw_app, op, index, plan, stack_top
+                )
+            except _CsgPlanError as exc:
+                return error_response(str(exc), code="INVALID_PARAMETER")
+            if not result.get("success"):
+                return _fail(result)
 
             feature_name = (result.get("data") or {}).get("feature_name")
             final_name = name
