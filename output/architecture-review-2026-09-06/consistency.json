@@ -1,0 +1,30 @@
+{
+ "agent_status": "OK",
+ "findings": [
+  {
+   "detail": "本仓把测试断言定位为工具计数权威面（提交 3067ee0：『权威=5 处测试断言』），而方法名 test_default_subprocess_registers_71_tools 仍是 N14 时代的 71，断言体已是 79（第五期 N27-N34 后）。任何用测试名（而非断言体）作计数参考的人/脚本都会读到错误数字——与本次审查要防的『计数漂移』同源。09-01 落地 79 时只改了断言值未同步方法名。",
+   "evidence": "L187 `def test_default_subprocess_registers_71_tools(self):` → L189 `self.assertEqual(len(tools), 79)`；对照 L192-196 `test_product_tools_register_under_env_gate` 断言 `self.assertEqual(len(tools), 81)`（该用例名无漂移）。同文件 L58 `self.assertEqual(len(tools), 79)`（进程内注册数）也对。",
+   "file": "E:\\SolidWorks 2026\\SolidWorksMCP\\SolidWorksMCP\\tests\\test_server.py",
+   "severity": "LOW",
+   "suggested_fix": "重命名为 test_default_subprocess_registers_79_tools，或去掉数字（test_default_subprocess_registers_default_tool_set）以免下轮扩工具再漂移；顺带核对『5 处断言』清单里是否还有其它以数字命名的方法。",
+   "title": "工具计数权威断言的方法名仍是 71，与其实际断言 79 漂移（N14 时代命名未随第五期更新）"
+  },
+  {
+   "detail": "服务端已接受 version 2 计划（_validate_csg_plan L805 `if version not in (1, 2)`；L820-822 v2 算子在 version!=2 时报错），但内置 csg_rebuild prompt 对外教学仍停在 v1：L72-73 『Call solidworks_features_rebuild_csg with one plan (version 1, units mm; ops: box, cylinder, cone, cut_cylinder)』，未提 polygon_prism/swept_arc/version 2。LLM 经此 prompt 引导永远不会用 v2 能力，属于随 N31 落地产生的文档↔代码滞后（08-31 审查早于 N31，不可能已覆盖）。",
+   "evidence": "prompts.py L67-91 solidworks_csg_rebuild_prompt 全文只出现 \"version 1\" 与 4 个 v1 算子；对照 solidworks_api/design.py L795 `CSG_V2_OPS = (\"polygon_prism\", \"swept_arc\")`、L805 版本检查 `(1, 2)`、L878-901 v2 字段校验（sides∈[3,60]、inscribed 默认 True、angle_deg 默认 90.0 且 (0,360]）。",
+   "file": "E:\\SolidWorks 2026\\SolidWorksMCP\\SolidWorksMCP\\solidworks_mcp\\registry\\prompts.py",
+   "severity": "LOW",
+   "suggested_fix": "在 prompt 中补一句 v2 增补说明（version 2 增 polygon_prism/swept_arc 两个仅可作首操作的原语及字段约束），或在 capabilities/limitations 里注明 v2 可用，保持对外宣发与实现同步。",
+   "title": "csg_rebuild 内置 prompt 在 N31 v2 上线后仍只宣发 v1 契约（in-code 文档滞后）"
+  },
+  {
+   "detail": "design.py L794 `CSG_VERSION = 1` 与 L805 硬编码 `if version not in (1, 2)` 并存：v2 支持落地时版本判定改成了字面量元组，未回写/未接线常量。codegraph 调用方索引列出了同段 CSG_OPS（1 caller）、CSG_V2_OPS（3 callers）的消费者，但 CSG_VERSION 无任何消费者——它是 write-only 常量，读者会误以为『当前契约版本=1』而校验在别处另有真值。",
+   "evidence": "L794 `CSG_VERSION = 1`；L805 `if version not in (1, 2): return (f\"unsupported plan version {version!r} (expected 1 or 2)\")`。codegraph blast-radius：CSG_OPS/CSG_V2_OPS/_validate_csg_plan 均列出 caller，CSG_VERSION 未列任何 caller。",
+   "file": "E:\\SolidWorks 2026\\SolidWorksMCP\\SolidWorksMCP\\solidworks_mcp\\solidworks_api\\design.py",
+   "severity": "LOW",
+   "suggested_fix": "二选一：删掉 CSG_VERSION 死常量；或改为 `CSG_SUPPORTED_VERSIONS = (1, 2)` 并让 L805 引用它，恢复单一真相源。",
+   "title": "CSG_VERSION=1 常量在 v2 支持后成为无消费者死值，版本合法集硬编码在校验器里"
+  }
+ ],
+ "verdict": "一致性审查（文档↔代码↔测试）完成度受环境限制：本环境无 Read/Bash/Grep，仅有 codegraph 索引（只覆盖代码，明确返回『No relevant code found for README.md AGENTS.md』/『No indexed file uniquely matches docs/csg-plan-v1.md』），故【可实测面全部实测，markdown 面未测】。\n\n①工具计数五方对齐——可测部分全绿：registry 实际注册数逐文件 verbatim 计数：file_io.py L89-107=6、misc.py L70-89=5、features.py L146-176=10、drawing.py L156-206=10、assembly.py L150-186=10、properties.py L135-167=10、part.py L538-633=28，默认合计 79；products.py L82-92 环境门控（L25 GATE_ENV=L27 SOLIDWORKS_MCP_PRODUCT_TOOLS）+2=81。tests/test_server.py 三处计数断言 L58=79、L189=79、L196=81 全对齐（但 L187 方法名残留 71，见 finding 1）。capabilities 派生面为动态派生不可漂移：registry/base.py L196 `\"tools\": [tool.name for tool in mcp._tool_manager.list_tools()]`，并由 test_server.py L62-64 test_advertised_tool_list_matches_registration 钉死与注册表一致。旁证：本会话连接的 live MCP server 实际暴露恰 79 个 solidworks_* 工具、无 ring_light，印证默认集=79。注：仓方宣称『权威=5 处测试断言』，我在可读范围内只定位到 3 处（test_server.py L58/L189/L196），其余 2 处未定位到，不计入对齐结论。README 两处/AGENTS.md 面因 markdown 不入索引未测。\n\n②ADR-0011/0012 增补段：ADR 原文不可读，无法逐字比对；但『loft 树判据』转述与实现一致——solidworks_api/part.py L793-799：注释『Blend2's return value is unreliable… the verdict is the tree』，代码 `before = latest_feature_name(model)` → `InsertProtrusionBlend2(False, False, False)` → `after = latest_feature_name(model)`，`if after == before` 则报 \"Loft feature creation rejected\"（严格说是树末名前后对比而非集合差，属同一判据族）。create_rib 的 math-substitute 契约与 ADR-0011 引用也在实现内自证（part.py L961-968 docstring、L1034-1037 返回 message 注明）。\n\n③CSG v2 字段：实现侧与转述字段表完全一致——design.py L883 `not 3 <= sides <= 60`、L890 `inscribed = op.get(\\\"inscribed\\\", True)`、L898 `angle = op.get(\\\"angle_deg\\\", 90.0)` 且 L899 `0 < angle <= 360`；rebuild 派发默认值同源（L979 inscribed=True、L996 angle 90.0）。tests/test_csg_rebuild.py L464 CsgV2TestCase（docstring『N31: contract v2 first-op ops…two first-op-only solids』）L492-506 断言 hex 派发 poly(6,10.0,8.0)+inscribed 默认 True+stack_top 13.0。观察（非 finding）：已读范围内 TestValidation L177-273 仅覆盖 v1 校验，未见 sides 2/61 或 angle 0/361 边界用例；CsgV2TestCase 尾段 L512-560 codegraph 反复不返回，不断言其不存在。\n\n④⑤aicad 的 docs/csg-plan-v1.md 副本 diff 与计划/AGENTS/README 基线数字（537/538/535）全清单：markdown 不可读，未产出 finding，留待有 Read/Bash/Grep 的成员补测。\n\n净结论：可测面（registry↔tests↔capabilities↔live server 四方、v2 字段、loft 判据）一致；新发现 3 个 LOW（权威断言方法名 71 漂移、v1-only prompt 未宣发 v2、CSG_VERSION 死常量），无 CRITICAL/HIGH/MEDIUM。"
+}

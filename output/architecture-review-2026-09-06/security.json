@@ -1,0 +1,30 @@
+{
+ "agent_status": "OK",
+ "findings": [
+  {
+   "detail": "第五期 CSG 契约 v2（N31 扩展 polygon_prism/swept_arc）沿用此手写校验器，但其数值检查绕开了全仓通用的 finite_number/positive_number 纪律：math.isfinite 缺失导致 NaN（比较恒 False）与 +inf 均可通过契约门；bool 子类 int 也可通过（True 被当作 1.0，仅 polygon_prism sides 一处显式排除了 bool，其余数值字段均未排除）。对照同文件 v1 派发目标全部有 API 层再校验（create_cylinder part.py:256-257、cut_round_hole design.py:191-203、create_polygon part.py:1069-1070、create_swept part.py:613/624/628/633 均 positive_number/finite_number），NaN/inf 会在派发层被 ValueError 拦截，故实际影响是：契约门形同虚设、错误在错误的层报出（已进入回滚机制后才失败，浪费 COM 调用），而非 NaN 直达 COM 的注入。工具入参面 plan: Dict[str, Any]（registry/features.py:33）不过滤内容，且 Python json.loads 默认接受 NaN/Infinity 字面量。属防御纵深一致性缺口而非可利用漏洞。",
+   "evidence": "design.py L838-842: `def _positive(key):` / `    value = op.get(key)` / `    if not isinstance(value, (int, float)) or value <= 0:` / `        return f\"operation[{index}]: {kind} needs a positive {key}\"` —— NaN<=0 为 False、+inf<=0 为 False、isinstance(True,int) 为 True，三者全部通过；L830-836 `at` 仅查 `isinstance(v, (int, float))`，NaN/inf/bool 均过；L846-850 box size `isinstance(v, (int, float)) and v > 0`，+inf 与 True 通过。对照 solidworks_mcp/utils/validation.py L9-19 finite_number（isinstance bool 排除 + math.isfinite）与本仓所有新工具均走 positive_number 的纪律。",
+   "file": "E:\\SolidWorks 2026\\SolidWorksMCP\\SolidWorksMCP\\solidworks_mcp\\solidworks_api\\design.py",
+   "severity": "LOW",
+   "suggested_fix": "_validate_csg_plan 内改用 solidworks_mcp.utils.validation 的 finite_number/positive_number（或复刻其 bool 排除 + math.isfinite 检查）做数值门：_positive 改为 `if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0`；`at`/box size/depth 同步补 finite 检查。这样契约层与 API 层语义一致，错误在 INVALID_PARAMETER 层直接报出。",
+   "title": "CSG 计划校验器 _validate_csg_plan 数值检查未排 NaN/+inf/bool，绕开 finite_number 纪律"
+  },
+  {
+   "detail": "两个功能等价的『多操作计划执行器』注解相反：solidworks_features_rebuild_csg（含 cut_cylinder 减材操作、box/cylinder/cone 多步堆叠，失败原子回滚）标注 STATE_CHANGE；solidworks_design_execute_plan（同样含 hole/threaded_hole 减材、多步执行带回滚）标注 DESTRUCTIVE。依赖 destructiveHint 做人工确认/风险提示的 MCP 客户端会对 rebuild_csg 减材操作少报风险。次要不一致：solidworks_feature_rename（仅改名、可逆）标 DESTRUCTIVE，而 solidworks_dimension_set（改尺寸重建几何）标 STATE_CHANGE——改名比改几何标得更危险，方向保守但语义颠倒。注意：rebuild_csg 注解源自 T16（非第五期新增），dimension_set/rename 亦为早期注解，08-31 审查可能已覆盖，此处仅作一致性记录；第五期新增工具注解本身全部核对无误。",
+   "evidence": "registry/features.py L147-149: `mcp.tool(title=\"Rebuild CSG plan\", annotations=STATE_CHANGE, structured_output=True)(solidworks_features_rebuild_csg)` 对照 registry/part.py L621-623: `mcp.tool(title=\"Execute design plan\", annotations=DESTRUCTIVE, structured_output=True)(solidworks_design_execute_plan)`；rebuild_csg 文档串（design.py L906-913）明言含 cut_cylinder 减材与 T10 回滚，与 execute_design_plan 语义同构。次要证据：features.py L171-173 rename 标 DESTRUCTIVE，L162-164 dimension_set 标 STATE_CHANGE。",
+   "file": "E:\\SolidWorks 2026\\SolidWorksMCP\\SolidWorksMCP\\solidworks_mcp\\registry\\features.py",
+   "severity": "LOW",
+   "suggested_fix": "将 solidworks_features_rebuild_csg 注解改为 DESTRUCTIVE（其含减材 op 且批量执行），与 execute_design_plan 对齐；同时复核 rename（改回 STATE_CHANGE 或保留保守标注但注释理由）与 dimension_set（建议 DESTRUCTIVE，与 set_feature_suppression 同级）的相对强度。若 08-31 已记录此问题，合并跟踪即可。",
+   "title": "注解不一致：rebuild_csg=STATE_CHANGE 而 execute_design_plan=DESTRUCTIVE，两计划执行器含同样的减材能力"
+  },
+  {
+   "detail": "GetLongPathNameW 语义：缓冲区不足时返回值为『所需大小（含终止符）』，此处 len(path)+260 的余量在多组件 8.3 路径（每段 ~8 字符可展开至最长 255 字符）下可被超出，此时函数返回 ≥ len(buffer)，代码静默回退到未展开的短路径。回退方向是 fail-closed：is_path_allowed 中 root 与 target 均经同一 normalize_path 处理，短/长形态不匹配只会导致 commonpath 不等 → 拒绝（false denial），不会造成越界放行，故无安全影响，仅是 GitHub-runner 类环境下深嵌套短路径的可用性/正确性小瑕疵。其余方面该实现正确：缓冲区由 nBufferLength 参数限定不会越界写；`0 < result < len(buffer)` 精确区分了『成功』（返回不含终止符的字符数）与『过小』（返回含终止符的需求值，代码注释 L31-34 明示不信任部分写入）；异常面（非 Windows/kernel32 缺失）有界 no-op；调用点均在 lexists 为真之后。TOCTOU：expand 在 normalize_path 内增加一次文件系统往返，但所有 sink（SaveAs3 前的 ensure_sink_path，见 part.py:1101/1184、drawing.py:924、file_io.py:255/288/326）都会在写入前重新归一化并复查（文档自称 narrowing），残余竞态为既有设计属性，未被本函数加剧。",
+   "evidence": "security.py L29-34: `buffer = ctypes.create_unicode_buffer(len(path) + 260)` / `result = ctypes.windll.kernel32.GetLongPathNameW(path, buffer, len(buffer))` / `# A return > len(buffer) is the \"required size\" signal (buffer too small); the buffer then holds a partially-written string and must not be trusted.` / `return buffer.value if 0 < result < len(buffer) else path` —— 单次调用、无按需扩容重试。",
+   "file": "E:\\SolidWorks 2026\\SolidWorksMCP\\SolidWorksMCP\\solidworks_mcp\\utils\\security.py",
+   "severity": "LOW",
+   "suggested_fix": "两段式调用：若 result >= len(buffer)（或 result==0 且 GetLastError()==ERROR_INSUFFICIENT_BUFFER），以 result 为长度重建 create_unicode_buffer(result) 重调一次；仍失败再回退原样返回。",
+   "title": "_expand_long_path 单次缓冲区 len(path)+260 余量不足时静默放弃展开（fail-closed），未按返回的所需大小重试"
+  }
+ ],
+ "verdict": "安全审查（第五期新增面，经 CodeGraph 只读索引完成，无 Read/Bash 工具）。【① _expand_long_path】实现正确：缓冲区受 nBufferLength 约束无越界写、`0 < result < len(buffer)` 精确对应 Win32 成功/过小语义且注释明确不信任部分写入、异常面有界、失败方向 fail-closed（短形态导致 containment 不匹配→拒绝）；TOCTOU 由 ensure_sink_path 在所有 SaveAs3 sink 前重新归一化收窄（残余竞态为既有已记录设计）。仅 1 条 LOW：缓冲区不足时未按返回所需大小重试，深嵌套 8.3 路径会静默放弃展开（仅可用性影响）。【② 新工具入参验证】create_polygon sides（bool 排除✓ part.py:1065，[3,60]✓）、create_slot length>width（part.py:1144）、create_rib base_z>=0（part.py:976-979，其余 finite_number✓）、apply_dome height positive+finite（decorations.py:118）、create_loft ≥2 profiles（part.py:727）、create_swept 显式 math.isfinite（part.py:624/628/633）、insert_bom_table 全参校验（drawing.py:988-997）——点名目标全部无漏网；真缺口在 _validate_csg_plan（LOW#1，NaN/+inf/bool 过契约门，下游 primitive 的 positive_number 兜底故非注入）。【③ 注解】create_rib=STATE_CHANGE 正确（与 create_cone/loft/polygon/slot 等加材惯例一致；DESTRUCTIVE 留给 cut/删除/批量计划类）；第五期新增注解全部一致无误；1 条 LOW 记录既有不一致（rebuild_csg STATE_CHANGE vs execute_design_plan DESTRUCTIVE，可能 08-31 已覆盖）。【④ aicad /api/stats/export 与 ⑤ 双仓 ci.yml】本环境不可审：aicad 无独立 .codegraph 索引（projectPath=aicad 的三次查询全部回退主仓符号；主仓工具引用的 aicad.interop.sw_features.csg_export.csg_plan_from_script 亦未命中索引），YAML 工作流不属符号索引范围，且本会话无 Read/Bash/Grep——按证据纪律不编造 finding，建议在有文件读取工具的环境补审这两项（尤其 N27 stats/export 的信息暴露面与 CI pip-audit 范围/secrets）。总计 3 LOW、0 高危；主仓第五期新增面未发现可利用安全漏洞。"
+}

@@ -1,0 +1,14 @@
+{
+ "agent_status": "OK",
+ "findings": [
+  {
+   "detail": "工具数从 71 增长到 79（N27-N34 批）时只更新了断言值未更新方法名，pytest 输出/-k 过滤/CI 报告中该用例名继续声称 71，与仓库近期专门治理的『文档计数漂移』（commit 3067ee0 将 AGENTS.md 69→79、标注旧值 71 为历史值）属同一类未收口残留。功能无影响（断言 79 正确且与实测一致），但误导维护者。",
+   "evidence": "tests/test_server.py:187-189 逐字：`def test_default_subprocess_registers_71_tools(self):` / `tools = self._registered_tools_in_subprocess({})` / `self.assertEqual(len(tools), 79)`。方法名声称 71，断言实为 79（同批 :58 标准面断言与 :196 产品门 81 断言均已对齐当前计数）。",
+   "file": "tests/test_server.py",
+   "severity": "LOW",
+   "suggested_fix": "重命名方法为 test_default_subprocess_registers_79_tools（或在 N34 收口批中连同所有『71/69 旧计数』残留一并清理）。",
+   "title": "测试方法名 test_default_subprocess_registers_71_tools 与断言值 79 漂移（71 为旧计数残留）"
+  }
+ ],
+ "verdict": "事实核查（代码侧完成，文档侧受环境限制）。本环境无 Bash/Read/Grep 原生工具，仅有 codegraph_explore（Read 等价，仅覆盖 .py 源码，.md 不在索引）与 MCP 资源读取；已尝试 file://（webReader 拒绝）、GitHub 远端（lancy666 账号 0 公开仓，仓库私有）、终端读取（空闲 PowerShell）、CCD 会话转录（最近同仓会话停在 09-02，早于 09-06 文档刷新，作废）。①79/81 工具声明：代码三重验证一致——tests/test_server.py:58 断言 len(tools)==79（:59 resources==3，:60 prompts==5）、:189 默认子进程 79、:196 产品 env 门 81；solidworks_mcp/server.py:35-131 门面再导出恰 5+28+10+10+6+10+10=79；本会话实连 MCP 服务器的 solidworks://capabilities 资源实测列出恰 79 个工具且含全部 N28-N33 新工具（swept/loft/polygon/slot/ref_plane/ref_axis/rib/dome/revolved/fillet/drawing_insert_bom_table/assembly_explode/assembly_get_bom），与 README『79 工具/产品 81』声明方向吻合——但 pytest 未实际执行（无 shell），README.md 本体未读到，属静态+运行面验证而非测试执行验证。②AGENTS.md 基线 537/540+105：无法验证（无 shell 跑全套、AGENTS.md 不可读）。③README MCP 接口节是否漏列新工具：README 不可读，无法判定；权威 79 工具全清单已自 live capabilities 资源取得，可由上级直接与 README 比对。④优化计划 §3 状态与提交 hash 抽查：计划 .md 不可读、无 git 工具，未验证（系统 git 快照仅证 HEAD=ab89d07 及 eccf8d0/3067ee0/384d1d1/6e4ace3 存在于 main）。⑤AGENTS.md『4 处计数断言』vs 实际几处：AGENTS.md 不可读无法裁决文档侧；实测当前 tests/test_server.py 恰有 3 处数字工具计数断言（58、189、196），当前 164 行是 _registered_tools_in_subprocess 助手的 code 字符串而非产品计数（81 断言实际在 196 行）——若某文档以『test_server 164 行产品计数』为第 5 处，其行号与当前 HEAD 不符；其余测试文件缺 grep 无法穷举，不能断言全局恰为 3 或 5 处。唯一确证新发现：test_server.py:187 方法名残留旧计数 71（见 findings）。建议上级汇总时：用有 Bash 的复核者补跑 `venv/Scripts/python.exe -m pytest tests/ -q` 与 README/AGENTS.md/计划文档的逐行比对，并裁决 4-vs-5 处计数断言声明的文档漂移。"
+}
