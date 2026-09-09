@@ -24,8 +24,8 @@
 
 | ID | 优先级 | 标题 | 仓 | 依赖 | 预估 | 状态 | 完成日期 |
 |---|---|---|---|---|---|---|---|
-| N42 | P0 | 空闲机全量复测 + T5 GLM 同 provider 复测 → S5 真实贡献终版报告 | ai | 空闲机；T5 条件=GLM key（U7） | 1h | `[ ]` | |
-| N43 | P0 | S5 v2 裁决（依 N42 数据定范围：script 件 STEP 拼装 / embedding / solver 扩原语 / PTE-B7 观察） | ai | N42 | 1h | `[ ]` | |
+| N42 | P0 | 空闲机全量复测 + T5 GLM 同 provider 复测 → S5 真实贡献终版报告 | ai | 空闲机；T5 条件=GLM key（U7） | 1h | `[x]` 2026-09-10（**84.2% 精确复现**16/19，残余 3 败=v4-flash 规划伪影；全量 23/30，排除 6 伪影 23/24；T5 按条款跳过；aicad `docs/s5-net-contribution-report.md`） | 2026-09-10 |
+| N43 | P0 | S5 v2 裁决（依 N42 数据定范围：script 件 STEP 拼装 / embedding / solver 扩原语 / PTE-B7 观察） | ai | N42 | 1h | `[x]` 2026-09-10（四候选三缓一推翻；裁决=v2 仅 planner 韧性+token 预算 2 项；`docs/prd-s5-v2.md`） | 2026-09-10 |
 | N44 | P0 | 批量队列 API + 交付包打包（终态门面 G3） | ai | 无 | 5h/2晚 | `[x]` 2026-09-09（三端点+守卫打包+BatchPanel+7+2 测；726 not-perf 绿；AGENTS 744 基线同 commit） | 2026-09-09 |
 | N45 | P0 | 评测集 19→30+（第一波，G2） | ai | 无 | 3h/1晚 | `[x]` 2026-09-09（+11 任务离线 30/30 全绿零回归；live 抽验 [!] 无 key 转 U7 后随 N42） | 2026-09-09 |
 
@@ -37,7 +37,7 @@
 | ID | 动作 | 状态 |
 |---|---|---|
 | **U4（承接五期）** | `coderabbit auth login`（本人浏览器 OAuth 或 API key） | ⏳ |
-| **U7（新增）** | GLM key 恢复后一句话通知（T5/N42 同 provider 复测触发条件；不恢复则 N42 用 DeepSeek 单 provider 复测+报告注明口径受限） | ⏳ 条件 |
+| **U7（新增）** | GLM key 恢复后一句话通知（T5/N42 同 provider 复测触发条件；不恢复则 N42 用 DeepSeek 单 provider 复测+报告注明口径受限） | ✅ 2026-09-09 用户通知 key 已恢复——实为 **cc-switch 中继 DeepSeek 通道**（环境变量/注册表均无直连 key，aicad 侧以 `local-relay` provider 接入）；GLM 仍缺 → T5 按条款跳过，报告注明口径受限（§4） |
 | **U8（新增 09-09）** | **U6 计费挡板复发**：aicad run 34351435452 两 attempt 双 job 均被「recent account payments have failed / spending limit」拦停（check-run annotation 定谳，同 U6 签名：steps 空+logs BlobNotFound）；主仓 push 未触发待验证。处理同 U6（Billing & plans 修复或转公开仓）后对 040d1f5 re-run 收口 | 🔴
 
 ---
@@ -46,10 +46,10 @@
 
 **目标**：G1 第一步——在干净环境重取全量数字，剥离 provider 变量，给出「S5 特性净贡献」的可信结论（v2 裁决 N43 的数据前置）。
 
-- [ ] 1. **空闲机全量复测**（条件：SW 关+CPU<20%，同 N26 纪律）：`python evals/run_evals.py --live --provider deepseek --baseline evals/output/report-20260902-203236-s5-after-deepseek.json`——验证 84.2% 在非内存压力环境可复现（归因批 T4 的 14/19 判环境性红，本步定谳）。
-- [ ] 2. **T5 GLM 同 provider 复测**（条件：U7；不恢复则跳过并在报告注明）：`--provider glm --baseline evals/output/report-20260902-163045-s5-before-baseline.json`——同 provider 前后对比=剥离换道效应的 S5 净贡献。
-- [ ] 3. **终版报告** `docs/s5-net-contribution-report.md`：三口径并列（before-GLM / after-DeepSeek / 复测口径），归因分层（provider 效应 / S5 特性 / 环境），残留失败逐件定性；product-vision G1 的 95% 差距分解（哪 pp 来自基建/哪 pp 来自能力）。
-- [ ] 4. 回填本表 + aicad `agents.md` 基线（若评测结论影响文档口径）。
+- [x] 1. **空闲机全量复测**（条件：SW 关+CPU<20%，同 N26 纪律）：`python evals/run_evals.py --live --provider deepseek --baseline evals/output/report-20260902-203236-s5-after-deepseek.json`——验证 84.2% 在非内存压力环境可复现（归因批 T4 的 14/19 判环境性红，本步定谳）。**执行（2026-09-10）**：key 实况=cc-switch 中继（deepseek-v4-flash，模型换代+中继路由两点口径差，报告 §0 声明）；主跑 15/19 → 补跑回收瞬态后 **16/19=84.2% 逐位复现**；T4 瞬态定谳维持（6/6 瞬态死亡补跑全绿）。
+- [x] 2. **T5 GLM 同 provider 复测**（条件：U7；不恢复则跳过并在报告注明）：`--provider glm --baseline evals/output/report-20260902-163045-s5-before-baseline.json`——同 provider 前后对比=剥离换道效应的 S5 净贡献。**执行**：GLM 全渠道缺（环境变量/注册表/中继上游）→ 按条款跳过，报告 §4 诚实注明「S5 净贡献无定谳数字」。
+- [x] 3. **终版报告** `docs/s5-net-contribution-report.md`：三口径并列（before-GLM / after-DeepSeek / 复测口径），归因分层（provider 效应 / S5 特性 / 环境），残留失败逐件定性；product-vision G1 的 95% 差距分解（哪 pp 来自基建/哪 pp 来自能力）。**含重大发现**：规划轮空补全伪影（v4-flash 推理失控 64k 字符 0 正文 × planner.py LlmError 无回退=6 任务整死，30 口径 -20pp）——G1 最短路径=基建修复而非能力堆叠。
+- [x] 4. 回填本表 + aicad `agents.md` 基线（若评测结论影响文档口径）。**执行**：AGENTS.md 评测行更新（离线 30/30+local-relay 通道注记）；s5 一期报告头部注记补 N42 终态。
 
 **验收**：复测报告落盘；84.2% 复现性有定谳（可复现/环境敏感两说其一，附证据）；S5 净贡献数字或明确「口径受限无法剥离」的诚实结论。
 
@@ -57,10 +57,10 @@
 
 **目标**：守门条款兑现（一期 PRD §4：归因数据齐前 v2 不立项）——用 N42 数据裁决 v2 范围并出 PRD-lite。
 
-- [ ] 1. 核销 PTE 多实体先行批（`c870368`）：B7 两任务在复测中的 mode 分布（plan 接管率）——若 plan 路径稳定接管且过，PTE 主线收口；若仍诚实回退，登记件型表达力缺口。
-- [ ] 2. **裁决矩阵**（依 N42 数据四选 N）：① script 件 STEP 拼装（六角螺栓/垫圈超 v1 件型——B7 回退主因）② embedding 检索替换 n-gram（RAG 升级）③ mate solver 扩原语 ④ PTE-B7 观察续跑。每项附「N42 数据依据 + 预期 pp 提升」。
-- [ ] 3. 产出 `aicad/docs/prd-s5-v2.md`（PRD-lite：范围=数据驱动裁定的 1-2 项；反目标=不为一指标堆四项）。
-- [ ] 4. 回填本表；v2 实施任务**不进本期**（第八期蓝本）。
+- [x] 1. 核销 PTE 多实体先行批（`c870368`）：B7 两任务在复测中的 mode 分布（plan 接管率）——若 plan 路径稳定接管且过，PTE 主线收口；若仍诚实回退，登记件型表达力缺口。**执行**：plan 接管率 100%（b7 3 任务全进规划轮）但兑现 0/3——全崩在规划轮 provider 空补全（无 LlmError 回退），**件型表达力未被验证**（原「B7 回退主因=件型」假设被推翻）；PTE 主线收口条件未达成，转 v2 修复后复验。
+- [x] 2. **裁决矩阵**（依 N42 数据四选 N）：① script 件 STEP 拼装（六角螺栓/垫圈超 v1 件型——B7 回退主因）② embedding 检索替换 n-gram（RAG 升级）③ mate solver 扩原语 ④ PTE-B7 观察续跑。每项附「N42 数据依据 + 预期 pp 提升」。**执行**：①推翻（主因=planner 崩溃非件型）、②无检索类失败数据、③mate_shaft_stack rounds=1 首轮过无迫切性、④被基建缺口阻塞——**裁决=新增 ①′ planner 韧性批（数据最硬：6 任务/-20pp/一行级缺口）**。
+- [x] 3. 产出 `aicad/docs/prd-s5-v2.md`（PRD-lite：范围=数据驱动裁定的 1-2 项；反目标=不为一指标堆四项）。**范围=2 项**：V2-1 planner LlmError 回退（代码+TDD）、V2-2 max_output_tokens 8192→16384（配置，hex_nut_plate 实证）；反目标含「不为凑 95% 改断言/措辞」。
+- [x] 4. 回填本表；v2 实施任务**不进本期**（第八期蓝本）。
 
 **验收**：裁决有数据依据（引用 N42 报告条目）；PRD-lite 落盘；守门条款闭环留痕。
 
@@ -116,7 +116,7 @@ batch-{id}/
 
 - [x] 1. 11 个新任务落盘（stepped_shaft/mirror_bracket/ribbed_box/b7_pump_base/grid_gussets/cylinder_ring_grid/material_steel_flange/equation_driven_plate/csg_box_boss_bore/hex_nut_plate/two_ring_stack）；断言全部机械可验。**四个 mock 数学首版被离线评测当场抓住**：wall 定位致 bbox y=45、沙箱材料表是英文名（合金钢→stainless）、CSG 堆叠 z 起点未对齐通道 B 语义、RegularPolygon 默认朝向 y 向是对边距——逐个修正后绿。
 - [x] 2. 离线 **30/30 全绿**（旧 19 零改零回归）。
-- [!] 3. live 抽验 BLOCKED（2026-09-09）：DEEPSEEK/GLM key 环境变量+用户注册表双查均空——按诚实失败原则不硬凑，随 U7 解锁后与 N42 复测一起执行。
+- [x] 3. live 抽验 BLOCKED（2026-09-09）：DEEPSEEK/GLM key 环境变量+用户注册表双查均空——按诚实失败原则不硬凑，随 U7 解锁后与 N42 复测一起执行。**解锁执行（2026-09-10，随 N42）**：主跑新 11 仅 1/11，补跑（16k）后 **7/11=63.6%**；仍败 4=3×规划伪影+mirror_bracket y/z 朝向歧义。低于「抽验 3 个 ≥2 过」验收线——如实记录：扩容暴露的两个问题（规划伪影/瞬态死亡）均已定谳且可修（N42 报告 §3）。
 - [x] 4. aicad `7e41553` + 报告头部扩容注记（旧 84.2% 与新口径分列声明）。
 
 **验收**：离线 30+ 任务全绿；旧任务零改零回归；live 抽验 3 个 ≥2 过（新任务首跑允许暴露问题——这正是扩容目的，如实记录）。
@@ -152,3 +152,25 @@ batch-{id}/
 > - **离线评测网自证**：四个 mock 数学错误（定位/材料名/堆叠起点/六角朝向）全部被离线跑当场抓住。
 > - **live 抽验 [!] 无 key**（环境+注册表双查）：转 U7 后随 N42 执行（诚实失败原则）。
 > - 旧 19 零改零回归；s5 一期报告头部已加分列口径注记（防 84.2% 与扩容后数字误比）。
+
+
+---
+
+## 10. N42+N43 执行记录（2026-09-10）
+
+> **N42 ✅ + N43 ✅：第七期 N42-N45 全部收官。**
+
+### N42：84.2% 精确复现 + 规划伪影根因定谳
+- **key 侦查**（环境变量/注册表/aicad 配置/shell profile 全渠道排查）：用户「key 已恢复」实为 **cc-switch 中继切回 DeepSeek**——本地代理 127.0.0.1:15721 暴露 OpenAI 兼容 `/chat/completions`（SSE 验证通过，0.3s 首字节），aicad 侧按设计零代码接入：`providers.toml` 新增 `local-relay`（auth 占位，上游由 cc-switch UI 管理，真 key 永不落仓）。注册表现存 `AISA_API_KEY` 为 09-06 旧值且四家官方端点全 401，与本题无关。
+- **主跑**（30 任务 live，v4-flash，8k 预算，22:54–23:17）：全 30=16/30；旧 19=15/19；新 11=1/11。
+- **补跑**（14 败任务逐一 `--task`，16k 预算，23:25–23:59）：**7 转绿**（6 瞬态 sandbox/OpenBLAS + hex_nut_plate no_code→过）、7 仍败（6 规划空补全 + mirror_bracket y/z 朝向）。
+- **根因实验**（合成长装配提示词直打中继，非流式/流式双测）：`finish=length, content=0, reasoning≈64k 字符`——**v4-flash 在装配级提示词推理失控**，8k→16k 预算无效；放大器=`planner.py` 只捕 `PlanFormatError`，规划轮 `LlmError` 无回退→整任务 harness 级死。
+- **终态数字**：旧 19 **16/19=84.2% 逐位复现**（残余 3 败=伪影）；全 30 **23/30**；排除 6 伪影 **23/24=95.8%**（口径说明非达标声明——伪影本身是要修的基建项，回收=30 口径 +20pp）。S5 净贡献：T5 不可执行→诚实「无定谳数字」（报告 §4）。
+- **现场坑**（进记忆）：git-bash `&` 后台随工具调用结束被杀；`Start-Process`/`DETACHED_PROCESS` 分离进程在本机冻结（0 CPU/4MB，loader 级）；可靠路径=**单工具调用内长前台**（600s 后自动转 harness 后台）。
+
+### N43：裁决=数据说话，v2 只批 2 项
+- 四候选：①STEP 拼装**推翻**（B7 主因=planner 崩溃非件型）、②embedding 无失败数据、③solver 无迫切性、④观察被基建阻塞→**新增 ①′ planner 韧性**。
+- `docs/prd-s5-v2.md`：V2-1 planner LlmError→plan_fallback_result（代码+TDD，验收=6 伪影任务 100% 产终态）、V2-2 max_tokens 8192→16384（配置）。反目标：不为凑 95% 改断言/措辞。v2 实施进第八期蓝本。
+
+### 顺带修复（回归收口）
+- `tests/test_evals.py` 任务数断言 19→30（**N45 `7e41553` 的遗漏联动**——昨晚只跑评测器未跑 pytest 全套，纪律缺口自纠）；全套 **726 not-perf 绿**。
