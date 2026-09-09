@@ -38,6 +38,7 @@
 |---|---|---|
 | **U4（承接五期）** | `coderabbit auth login`（本人浏览器 OAuth 或 API key） | ⏳ |
 | **U7（新增）** | GLM key 恢复后一句话通知（T5/N42 同 provider 复测触发条件；不恢复则 N42 用 DeepSeek 单 provider 复测+报告注明口径受限） | ⏳ 条件 |
+| **U8（新增 09-09）** | **U6 计费挡板复发**：aicad run 34351435452 两 attempt 双 job 均被「recent account payments have failed / spending limit」拦停（check-run annotation 定谳，同 U6 签名：steps 空+logs BlobNotFound）；主仓 push 未触发待验证。处理同 U6（Billing & plans 修复或转公开仓）后对 040d1f5 re-run 收口 | 🔴
 
 ---
 
@@ -129,6 +130,7 @@ batch-{id}/
 - **N44 内存队列 v1 的重启丢失**：如实声明+前端提示；持久化为 v2 观察项，不为 v1 加存储依赖。
 - **N45 新任务的 live 首跑失败率可能拉低总体数字**：扩容报告须分列「旧 19 vs 新增」两组口径，避免与 84.2% 直接比较产生误读。
 - 本期主仓零代码改动（文档除外）——79 工具/计数锁/覆盖率红线全部冻结，风险面集中在 aicad。
+- **U8（09-09 实证）**：N44 推送触发 aicad CI 双 attempt 全被账户计费挡板拦停（annotation 定谳）——N44 以**本地全套绿**（726+18 deselected / npm 5 + build）收口，CI 验证挂起待 U8 解除后 re-run（同 N24 当年路径）。
 
 
 ---
