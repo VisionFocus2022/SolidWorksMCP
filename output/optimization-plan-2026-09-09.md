@@ -26,7 +26,7 @@
 |---|---|---|---|---|---|---|---|
 | N42 | P0 | 空闲机全量复测 + T5 GLM 同 provider 复测 → S5 真实贡献终版报告 | ai | 空闲机；T5 条件=GLM key（U7） | 1h | `[ ]` | |
 | N43 | P0 | S5 v2 裁决（依 N42 数据定范围：script 件 STEP 拼装 / embedding / solver 扩原语 / PTE-B7 观察） | ai | N42 | 1h | `[ ]` | |
-| N44 | P0 | 批量队列 API + 交付包打包（终态门面 G3） | ai | 无 | 5h/2晚 | `[ ]` | |
+| N44 | P0 | 批量队列 API + 交付包打包（终态门面 G3） | ai | 无 | 5h/2晚 | `[x]` 2026-09-09（三端点+守卫打包+BatchPanel+7+2 测；726 not-perf 绿；AGENTS 744 基线同 commit） | 2026-09-09 |
 | N45 | P0 | 评测集 19→30+（第一波，G2） | ai | 无 | 3h/1晚 | `[ ]` | |
 
 > 执行顺序建议：N44 与 N45 无外部依赖可先行（N44 大，建议先做核心队列 API 晚 1、打包+前端晚 2；N45 可穿插）→ N42 等空闲机窗口（同 perf 预算纪律：全量连跑需空闲机）→ N43 收口。
@@ -89,11 +89,11 @@ batch-{id}/
                           #  assertions[pass|fail+diff], cost_tokens, provider}
 ```
 
-- [ ] 1. **TDD**：`tests/test_batch.py`——batch 创建/状态流转（fake sandbox）/失败任务不阻断后续/zip 结构与 report.json 键齐全/空请求 400。
-- [ ] 2. **实现**：`api/routes_batch.py`（queue 存内存 dict+串行 worker 线程，v1 不落盘不持久——重启丢队列如实声明）；复用 chat_service 的执行路径与 artifacts 的产物收集；聚合 zip 用标准库 zipfile。
-- [ ] 3. **前端最小面**：`frontend/src/pages/Batch.tsx`——提交表单（多行需求）+ 状态表（逐任务 pass/fail/链接）+ 聚合包下载按钮；`npm test` 补 2 冒烟用例。
-- [ ] 4. aicad 全套绿（+新测）；CI 双 job 绿。
-- [ ] 5. commit + 回填本表。
+- [x] 1. **TDD**：7 用例——创建/轮询终态/失败不阻断/未知 404/zip 结构（FakeSandbox 实物化 step+svg+dxf，预期修正为「完整交付集」）/collected files 组装/collector 全守卫。**偏差**：空请求 422（pydantic min_length 门，与 fmt pattern 422 同族）非计划的 400。
+- [x] 2. **实现**：`api/routes_batch.py`（内存注册表+串行 worker 线程跑**私有事件循环**——TestClient 请求间事件循环不存活，线程托管是测试实证的选择）；复用 run_chat/artifacts 全链。**联动重构**：chat_service.run_chat/_run_chat_body 返回 Optional[LoopResult]（mode/rounds/error 透传 report；routes_chat 忽略返回值零行为变化）。
+- [x] 3. **前端**：`components/BatchPanel.tsx`（App 侧 tab 切换「对话/批量」，无 router 依赖）+ client.ts 三函数；npm test 5 绿（+2）。
+- [x] 4. aicad 全套 **726 not-perf + 18 deselected**（+7 零回归）；npm test 5 绿 + build 绿；CI 推送后自动验证。
+- [x] 5. commit + 回填本表 + AGENTS 基线 744 同 commit（N36 纪律）。
 
 **验收**：curl 提交 3 请求（含 1 个必失败任务）→ 全部出终态（失败者 report.json 含断言 diff）→ 聚合 zip 下载且结构符合；前端可见状态与下载；全套绿。
 **反目标**：v1 不做并发>1（COM/沙箱串行纪律）、不做持久化队列/断点续跑（v2 观察项）、不做 SW .sldprt 强制（可达性如实）。
@@ -129,3 +129,14 @@ batch-{id}/
 - **N44 内存队列 v1 的重启丢失**：如实声明+前端提示；持久化为 v2 观察项，不为 v1 加存储依赖。
 - **N45 新任务的 live 首跑失败率可能拉低总体数字**：扩容报告须分列「旧 19 vs 新增」两组口径，避免与 84.2% 直接比较产生误读。
 - 本期主仓零代码改动（文档除外）——79 工具/计数锁/覆盖率红线全部冻结，风险面集中在 aicad。
+
+
+---
+
+## 8. N44 执行记录（2026-09-09）
+
+> **N44 ✅（一晚做完）**：终态门面落地——「需求表进、交付包出」的最短用户价值路径。
+> - **后端**：POST /api/batch（202+batch_id）→ 串行 worker（每请求独立 session 走完整 CorrectionLoop 链）→ GET 轮询 → GET package 聚合 zip。v1 反目标全守：串行（COM/沙箱纪律）、内存态（重启丢队列，UI 与 docstring 双声明）、SW .sldprt 不强制。
+> - **交付包**：`model.step / drawing.svg / drawing.dxf / bom.csv / report.json` 每任务一目录；**逐源守卫**（任何产物物化失败仅剔除，`included` 旗标如实）——产品原则 3 在交付层的落点。
+> - **测试证据**：FakeSandbox 实测物化 step/views/dxf（比立项假设强）——zip 结构用例断言**完整交付集**；失败任务 report.json 携带归因码；单任务崩溃不杀批次。
+> - **偏差两条**：空请求 422 非 400（pydantic 门）；Batch.tsx → BatchPanel.tsx（App 无 router，tab 切换最小面）。
