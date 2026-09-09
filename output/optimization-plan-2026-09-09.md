@@ -38,7 +38,7 @@
 |---|---|---|
 | **U4（承接五期）** | `coderabbit auth login`（本人浏览器 OAuth 或 API key） | ⏳ |
 | **U7（新增）** | GLM key 恢复后一句话通知（T5/N42 同 provider 复测触发条件；不恢复则 N42 用 DeepSeek 单 provider 复测+报告注明口径受限） | ✅ 2026-09-09 用户通知 key 已恢复——实为 **cc-switch 中继 DeepSeek 通道**（环境变量/注册表均无直连 key，aicad 侧以 `local-relay` provider 接入）；GLM 仍缺 → T5 按条款跳过，报告注明口径受限（§4） |
-| **U8（新增 09-09）** | **U6 计费挡板复发**：aicad run 34351435452 两 attempt 双 job 均被「recent account payments have failed / spending limit」拦停（check-run annotation 定谳，同 U6 签名：steps 空+logs BlobNotFound）；主仓 push 未触发待验证。处理同 U6（Billing & plans 修复或转公开仓）后对 040d1f5 re-run 收口 | 🔴
+| **U8（新增 09-09）** | **U6 计费挡板复发**：aicad run 34351435452 两 attempt 双 job 均被「recent account payments have failed / spending limit」拦停（check-run annotation 定谳，同 U6 签名：steps 空+logs BlobNotFound）；主仓 push 未触发待验证。处理同 U6（Billing & plans 修复或转公开仓）后对 040d1f5 re-run 收口。**09-10 定谳升级：挡板确认拦停双仓**（主仓 run 34375715235=ed43d77、aicad run 34375643370=19626c4，annotation 一字不差）——Billing 修复后 re-run 清单：主仓 91109c2/ed43d77、aicad 040d1f5/7e41553/19626c4 | 🔴
 
 ---
 
