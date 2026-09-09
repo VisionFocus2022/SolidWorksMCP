@@ -27,7 +27,7 @@
 | N42 | P0 | 空闲机全量复测 + T5 GLM 同 provider 复测 → S5 真实贡献终版报告 | ai | 空闲机；T5 条件=GLM key（U7） | 1h | `[ ]` | |
 | N43 | P0 | S5 v2 裁决（依 N42 数据定范围：script 件 STEP 拼装 / embedding / solver 扩原语 / PTE-B7 观察） | ai | N42 | 1h | `[ ]` | |
 | N44 | P0 | 批量队列 API + 交付包打包（终态门面 G3） | ai | 无 | 5h/2晚 | `[x]` 2026-09-09（三端点+守卫打包+BatchPanel+7+2 测；726 not-perf 绿；AGENTS 744 基线同 commit） | 2026-09-09 |
-| N45 | P0 | 评测集 19→30+（第一波，G2） | ai | 无 | 3h/1晚 | `[ ]` | |
+| N45 | P0 | 评测集 19→30+（第一波，G2） | ai | 无 | 3h/1晚 | `[x]` 2026-09-09（+11 任务离线 30/30 全绿零回归；live 抽验 [!] 无 key 转 U7 后随 N42） | 2026-09-09 |
 
 > 执行顺序建议：N44 与 N45 无外部依赖可先行（N44 大，建议先做核心队列 API 晚 1、打包+前端晚 2；N45 可穿插）→ N42 等空闲机窗口（同 perf 预算纪律：全量连跑需空闲机）→ N43 收口。
 > 远期观察项（继承）：宏录制器解锁五族（G4，第八期+用户配合）、GD&T（G5）、CSG v3（G6）、路由策略（G8）、安装包（G9，第九期）、多机（G10）。
@@ -114,10 +114,10 @@ batch-{id}/
 | 图纸 | `drawing_export_bundle`（建件→出图→PDF+DXF 双格式） | 文件存在+PDF 字节头+DXF SECTION 头 |
 | 阶梯/复合 | `stepped_shaft`（三段轴）、`complex_gear_plate` | 段径/体积窗口 |
 
-- [ ] 1. 写任务 JSONL + mock 脚本 + 断言（断言全部机械可验——数值窗口/计数/文件存在性）。
-- [ ] 2. 离线全套：旧 19 零回归 + 新增全绿（mock 层）。
-- [ ] 3. 抽 3 个新任务 live 冒烟（DeepSeek，费用敏感：只抽验不全量）。
-- [ ] 4. commit + 回填本表；`docs/s5-autonomy-phase1-report.md` 头部加「评测集已扩容至 N 任务」指针。
+- [x] 1. 11 个新任务落盘（stepped_shaft/mirror_bracket/ribbed_box/b7_pump_base/grid_gussets/cylinder_ring_grid/material_steel_flange/equation_driven_plate/csg_box_boss_bore/hex_nut_plate/two_ring_stack）；断言全部机械可验。**四个 mock 数学首版被离线评测当场抓住**：wall 定位致 bbox y=45、沙箱材料表是英文名（合金钢→stainless）、CSG 堆叠 z 起点未对齐通道 B 语义、RegularPolygon 默认朝向 y 向是对边距——逐个修正后绿。
+- [x] 2. 离线 **30/30 全绿**（旧 19 零改零回归）。
+- [!] 3. live 抽验 BLOCKED（2026-09-09）：DEEPSEEK/GLM key 环境变量+用户注册表双查均空——按诚实失败原则不硬凑，随 U7 解锁后与 N42 复测一起执行。
+- [x] 4. aicad `7e41553` + 报告头部扩容注记（旧 84.2% 与新口径分列声明）。
 
 **验收**：离线 30+ 任务全绿；旧任务零改零回归；live 抽验 3 个 ≥2 过（新任务首跑允许暴露问题——这正是扩容目的，如实记录）。
 
@@ -142,3 +142,13 @@ batch-{id}/
 > - **交付包**：`model.step / drawing.svg / drawing.dxf / bom.csv / report.json` 每任务一目录；**逐源守卫**（任何产物物化失败仅剔除，`included` 旗标如实）——产品原则 3 在交付层的落点。
 > - **测试证据**：FakeSandbox 实测物化 step/views/dxf（比立项假设强）——zip 结构用例断言**完整交付集**；失败任务 report.json 携带归因码；单任务崩溃不杀批次。
 > - **偏差两条**：空请求 422 非 400（pydantic 门）；Batch.tsx → BatchPanel.tsx（App 无 router，tab 切换最小面）。
+
+
+---
+
+## 9. N45 执行记录（2026-09-09）
+
+> **N45 ✅（live 抽验转挂）**：「同一把尺子」加宽到 30。+11 任务靶向覆盖：BLOCKED 域数学替代（mirror_bracket/ribbed_box）、10 件装配（b7_pump_base）、12 件格阵（grid_gussets）、孔阵几何断言（hole_count 走 BRep 提取）、材料（stainless）、方程式联动、CSG 堆叠变体、双实体叠放。
+> - **离线评测网自证**：四个 mock 数学错误（定位/材料名/堆叠起点/六角朝向）全部被离线跑当场抓住。
+> - **live 抽验 [!] 无 key**（环境+注册表双查）：转 U7 后随 N42 执行（诚实失败原则）。
+> - 旧 19 零改零回归；s5 一期报告头部已加分列口径注记（防 84.2% 与扩容后数字误比）。
