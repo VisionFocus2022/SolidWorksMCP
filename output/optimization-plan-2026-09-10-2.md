@@ -26,8 +26,8 @@
 |---|---|---|---|---|---|---|---|
 | N48 | P0 | PyInstaller frozen 打包实测（主仓 MCP server）→ 构建脚本+spec+MCP stdio smoke | 主 | 无 | 1晚 | `[x]` 2026-09-10（**一次成功**：16s 构建/47MB/0.6s 握手/79 工具逐位一致/诚实失败 PASS；pywin32 零配置；ezdxf 观察项对主仓 N/A；报告 docs/packaging-frozen-report.md；D5 建议=frozen onedir 采纳） | 2026-09-10 |
 | N49 | P0 | D5 安装形态裁决 + 用户文档 v1（安装/配置/首跑）+ 示例库首波（20+ 取自 examples/） | 主 | N48 | 1晚 | `[x]` 2026-09-10（D5=frozen onedir 回填 vision/报告；user-guide v1（10 环境变量从 config.py 源头核验+模板发现链+首跑 4 步清单+排障表）；examples/ 24 卡 5 域目录化（验收数字引 e2e 实证，含 BLOCKED 边界诚实声明）） | 2026-09-10 |
-| N50 | P2 | G8 路由策略固化：[llm.routing] 双 provider 对比评测 + 配置文档 | ai | 无 | 1晚 | `[ ]` | |
-| N51 | P2 | G10 多机部署评估（观察性质，无实施承诺） | — | 无 | 0.5晚 | `[ ]` | |
+| N50 | P2 | G8 路由策略固化：[llm.routing] 双 provider 对比评测 + 配置文档 | ai | 无 | 1晚 | `[x]` 2026-09-10（aicad docs/routing-guide.md：四槽语义/优先级/三配置通道/评测复跑命令/数据锚点表；**对比评测按条款如实记不可执行**——中继上游仍单家 DeepSeek（实时复核 /v1/models），上游出现第二家时按 §4 命令取数） | 2026-09-10 |
+| N51 | P2 | G10 多机部署评估（观察性质，无实施承诺） | — | 无 | 0.5晚 | `[x]` 2026-09-10（docs/multi-machine-assessment.md：差距矩阵（COM 同机硬约束/会话/队列/租户/许可）；建议=近期按席位 frozen 零改动部署，集中化不立项直至真实诉求） | 2026-09-10 |
 
 > 执行顺序：N48 → N49（同一价值链）；N50/N51 可穿插。远期观察项（继续继承）：宏录制器解锁五族（G4，**需用户配合 ~30min/族**——最高价值挂起项）、GD&T（G5）、CSG v3（G6）；S5 v2 观察项：B7 件型表达力复验、GLM 通道补 T5、规划轮路由非 flash 档。
 
@@ -63,13 +63,13 @@
 
 ## 5. N50 G8 路由策略固化（P2，aicad，1晚）
 
-- [ ] 1. [llm.routing] plan/exec 双 provider 配置对比评测（当前上游仅 DeepSeek 单家——配置位就绪后若上游仍单一，如实记「单上游无法对比」并固化为配置文档）。
-- [ ] 2. `docs/routing-guide.md`（aicad）：路由槽语义、何时配 plan_provider、评测复跑命令。
+- [x] 1. [llm.routing] plan/exec 双 provider 配置对比评测（当前上游仅 DeepSeek 单家——配置位就绪后若上游仍单一，如实记「单上游无法对比」并固化为配置文档）。
+- [x] 2. `docs/routing-guide.md`（aicad）：路由槽语义、何时配 plan_provider、评测复跑命令。
 - [ ] 3. 回填本表。
 
 ## 6. N51 G10 多机部署评估（P2，观察，0.5晚）
 
-- [ ] 1. 评估备忘：多机场景（车间多台 SW 工位）对当前单机架构的差距清单（会话隔离/端口/许可），**只评估不实施**——product-vision G10 数据输入。
+- [x] 1. 评估备忘：多机场景（车间多台 SW 工位）对当前单机架构的差距清单（会话隔离/端口/许可），**只评估不实施**——product-vision G10 数据输入。
 
 ---
 
