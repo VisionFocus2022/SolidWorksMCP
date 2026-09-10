@@ -23,7 +23,7 @@
 | ID | 动作 | 状态 |
 |---|---|---|
 | **U4（顺承五期）** | `coderabbit auth login`（本人浏览器 OAuth 或 API key） | ⏳ |
-| **U8（顺承七期，09-10 复核）** | GitHub Billing 修复——计费挡板已确认拦停**双仓全部 6 个 run**（主仓 91109c2/ed43d77/ca639e6、aicad 040d1f5/7e41553/19626c4，annotation 一字不差）。修复后 re-run 最新 run 即可收口（主仓 ca639e6/aicad 本期推送各一；历史 docs-only commit 的旧 run 可不补） | 🔴 |
+| **U8（顺承七期，09-10 复核）** | GitHub Billing 修复——计费挡板已确认拦停**双仓全部 6 个 run**（主仓 91109c2/ed43d77/ca639e6、aicad 040d1f5/7e41553/19626c4，annotation 一字不差）。修复后 re-run 最新 run 即可收口（主仓 ca639e6/aicad 本期推送各一；历史 docs-only commit 的旧 run 可不补）。**09-10 用户报「Billing 已修」后三次 re-run（12 分钟跨度）均被同签即拦**（API 受理 201 但 job 不启动，steps=0）——修复未生效，需查：①VisionFocus2022 账户（非个人账户）Billing & plans 的失败发票是否已清算；②**Spending limits → Actions and Packages 是否 >0**（annotation 双条件：支付失败**或** spending limit 过低）；③支付生效延迟 | 🔴 |
 
 ---
 
