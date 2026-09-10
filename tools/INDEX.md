@@ -36,6 +36,7 @@
 
 | 脚本 | 验证对象 | 有效结论 | 任务 |
 |---|---|---|---|
+| gtol 取证（N52，2026-09-10，非探针=typelib+PS 反射） | GD&T 框格契约 | **宿主=IDrawingDoc.NewGtol() 零参工厂**（非 ModelDoc）；IGtol.SetFrameSymbols2 九参全标量（FrameNumber, GCS, TolDia1, TolMC1, TolDia2, TolMC2, DatumMC1-3）/SetFrameValues2 六参字符串（FrameNumber, Tol1, Tol2, Datum1-3）/SetPosition(米)；判据=GetFrameCount 零参属性（成功=1）；GCS 枚举 PS 反射 swconst.dll（flatness=15/round=16/cyl=17/perp=21/position=23/runout=25/26），MC（MMC=1/RFS=2/LMC=3）；基准符号另有 IDrawingDoc.InsertDatumTag()（首版未做）；**实机 e2e 留观察项（SW 未运行窗口）**——NewGtol 静默 None 风险待实机定谳 | N52 |
 | probe_drawing.py | 建图/三视图/标注/导出 | 模板 GetUserPreferenceStringValue(10)；Create1stAngleViews2 恒 False→手动三视图；InsertModelAnnotations2(0,True,0,True,True,False) 唯一有效；PDF/PNG SaveAs3 | T12 |
 | probe_dim_organize_section.py | 尺寸遍历/删除/错开+剖视图 | GetDisplayDimensions 零参属性；删除链 GetNameForSelection→SelectByID2("DIMENSION")→DeleteSelection(True)；SetPosition 错开；CreateSectionViewAt4(x,y,0,草图名,0,0) | N4 |
 | probe_section_debug.py | 剖切线放置契约 | 剖切线必须画 sheet 空白区（视图区域上的线归视图草图→失败）；At5/ICreate/MakeSectionLine 全拒；SW 长会话后 InsertModelAnnotations2 可能零产出，重启恢复 | N4 |

@@ -1034,3 +1034,133 @@ def insert_bom_table(
     except Exception as exc:
         logger.exception("Failed to insert BOM table")
         return error_response(f"Failed to insert BOM table: {exc}")
+
+
+# N52：GD&T 形位公差框格。契约（typelib 2026-09-10 取证）：
+# 宿主 = IDrawingDoc.NewGtol()（零参工厂）；IGtol.SetFrameSymbols2 九参全标量
+# （FrameNumber, GCS, TolDia1, TolMC1, TolDia2, TolMC2, DatumMC1-3）、
+# SetFrameValues2 六参字符串（FrameNumber, Tol1, Tol2, Datum1-3）、
+# SetPosition 米制；判据 = GetFrameCount 零参属性（成功必为 1）。
+# GCS/MC 枚举值经 PowerShell 反射 swconst.dll（makepy 不生成枚举值）。
+GTOL_CHARACTERISTICS: Dict[str, int] = {
+    "symmetry": 13,
+    "straightness": 14,
+    "flatness": 15,
+    "circularity": 16,
+    "cylindricity": 17,
+    "profile_line": 18,
+    "profile_surface": 19,
+    "angularity": 20,
+    "perpendicularity": 21,
+    "parallelism": 22,
+    "position": 23,
+    "concentricity": 24,
+    "circular_runout": 25,
+    "total_runout": 26,
+}
+GTOL_MATERIAL_CONDITIONS: Dict[str, int] = {"none": 0, "mmc": 1, "rfs": 2, "lmc": 3}
+MAX_GTOL_TOLERANCE_MM = 100.0
+
+
+def insert_gtol(
+    sw_app: SolidWorksApp,
+    characteristic: str,
+    tolerance_mm: float,
+    x_mm: float,
+    y_mm: float,
+    diameter: bool = False,
+    material_condition: str = "none",
+    datum_a: Optional[str] = None,
+    datum_b: Optional[str] = None,
+    datum_c: Optional[str] = None,
+) -> dict:
+    """Insert a GD&T feature-control frame on the active drawing.
+
+    ``characteristic`` is one of the GTOL_CHARACTERISTICS keys (flatness,
+    position, perpendicularity, ...); ``tolerance_mm`` is the tolerance zone
+    width in millimetres; ``diameter`` prefixes the Ø modifier and
+    ``material_condition`` picks none/mmc/rfs/lmc; ``datum_a/b/c`` are the
+    reference letters. Coordinates are sheet millimetres.
+    """
+    key = str(characteristic or "").strip().lower()
+    gcs = GTOL_CHARACTERISTICS.get(key)
+    if gcs is None:
+        return error_response(
+            "characteristic must be one of "
+            f"{sorted(GTOL_CHARACTERISTICS)}",
+            code="INVALID_PARAMETER",
+        )
+    mc_key = str(material_condition or "none").strip().lower()
+    mc = GTOL_MATERIAL_CONDITIONS.get(mc_key)
+    if mc is None:
+        return error_response(
+            f"material_condition must be one of {sorted(GTOL_MATERIAL_CONDITIONS)}",
+            code="INVALID_PARAMETER",
+        )
+    try:
+        tol = float(tolerance_mm)
+        x_m = float(x_mm) / 1000.0
+        y_m = float(y_mm) / 1000.0
+    except (TypeError, ValueError):
+        return error_response(
+            "tolerance_mm, x_mm and y_mm must be numbers",
+            code="INVALID_PARAMETER",
+        )
+    if not (0 < tol <= MAX_GTOL_TOLERANCE_MM):
+        return error_response(
+            f"tolerance_mm must be within (0, {MAX_GTOL_TOLERANCE_MM:g}]",
+            code="INVALID_PARAMETER",
+        )
+    if abs(x_m) > MAX_SHEET_COORD_M or abs(y_m) > MAX_SHEET_COORD_M:
+        return error_response(
+            "x_mm/y_mm exceed the printable sheet area",
+            code="INVALID_PARAMETER",
+        )
+    datums = [
+        (str(d).strip() if d else "")[:4]
+        for d in (datum_a, datum_b, datum_c)
+    ]
+
+    try:
+        model = sw_app.get_active_document()
+        if model is None:
+            return error_response("No active document")
+        if call_or_value(model, "GetType") != swDocDRAWING:
+            return error_response("Active document is not a drawing")
+
+        gtol = model.NewGtol()
+        if gtol is None:
+            return error_response(
+                "SolidWorks rejected the feature-control frame (NewGtol "
+                "returned nothing) — no frame was inserted",
+                code="SW_API_ERROR",
+            )
+        gtol.SetFrameSymbols2(1, gcs, bool(diameter), mc, False, 0, 0, 0, 0)
+        gtol.SetFrameValues2(
+            1, f"{tol:g}", "", datums[0], datums[1], datums[2]
+        )
+        gtol.SetPosition(x_m, y_m, 0.0)
+        frames = call_or_value(gtol, "GetFrameCount")
+        if frames != 1:
+            return error_response(
+                f"frame was not committed (frame count = {frames})",
+                code="SW_NO_EFFECT",
+            )
+        call_or_value(model, "EditRebuild3")
+        return success_response(
+            {
+                "characteristic": key,
+                "tolerance_mm": tol,
+                "diameter": bool(diameter),
+                "material_condition": mc_key,
+                "datums": [d for d in datums if d],
+                "x_mm": float(x_mm),
+                "y_mm": float(y_mm),
+                "frames": int(frames),
+            }
+        )
+    except ValueError as exc:
+        return error_response(str(exc), code="INVALID_PARAMETER")
+    except Exception as exc:
+        logger.exception("Failed to insert GD&T frame")
+        return error_response(f"Failed to insert GD&T frame: {exc}")

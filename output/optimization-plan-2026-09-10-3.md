@@ -25,7 +25,7 @@
 
 | ID | 优先级 | 标题 | 仓 | 依赖 | 预估 | 状态 | 完成日期 |
 |---|---|---|---|---|---|---|---|
-| N52 | P1 | G5 GD&T：形位公差框格+基准符号工具（取证→TDD→实现，drawing 域） | 主 | 无 | 1晚 | `[ ]` | |
+| N52 | P1 | G5 GD&T：形位公差框格+基准符号工具（取证→TDD→实现，drawing 域） | 主 | 无 | 1晚 | `[x]` 2026-09-10（契约=IDrawingDoc.NewGtol 零参工厂+SetFrameSymbols2 九参/SetFrameValues2 六参/SetPosition+GetFrameCount 判据；GCS/MC 枚举 PS 反射；**工具 79→80 计数锁 5 处同步+README/AGENTS**；+8 fakes 测（含 NewGtol=None 诚实失败）；全套 565+106 绿；e2e 留观察项=SW 未运行窗口，实机 NewGtol 行为待定谳） | 2026-09-10 |
 | N53 | P0 | G2 第二波：评测集 30→50（编辑型/多实体/参数化/装配变体/异形件域；断言全机械可验） | ai | 无 | 1-2晚 | `[ ]` | |
 | N54 | P2 | G6 CSG 契约 v3：通道 B AST 识别 polygon/extrude + 导出方向 op（双向互证对称化） | 主+ai | 无 | 1晚 | `[ ]` | |
 | N55 | P1 | G4 宏录制器契约转录：五族逐族 .swp 宏→API 契约→BLOCKED 解锁（mirror/pattern/rib/combine/AutoBalloon） | 主 | **U9（用户录宏）** | 1晚/族 | `[ ]` 条件 | |
@@ -48,11 +48,11 @@
 
 **目标**：制造级图纸的最后一块——形位公差框格（ InsertGTOL 家族）+ 基准符号作为稳定工具暴露。
 
-- [ ] 1. **取证探针**（探针先行，ADR-0011 路径）：typelib grep GTOL/Datum 符号族（InsertGTOL/InsertDatumTag/GetGTOL...），实测调用形态（参照 drawing 域既有坑：InsertModelAnnotations3 宿主错误前例、零参属性语义）。
-- [ ] 2. **TDD**：fakes 层工具契约测试（框格创建/参数/失败形态）；工具计数锁 79→80+（5 处断言同步 + README + AGENTS 基线，N36 纪律同 commit）。
-- [ ] 3. **实现**：drawing 域注册 `drawing_insert_gtol`（+基准符号视取证结果）；单位/语义对齐既有 tolerance 工具。
-- [ ] 4. **e2e**（SW 窗口）：建件→出图→插框格→导出 PDF，PDF 含 GTOL 框格字节证据（或如实记录不可验）。
-- [ ] 5. 回填本表；全套绿；**BLOCKED 风险如实声明**（GTOL 族若全变体静默 None=AutoBalloon 同族，转观察+数学替代评估）。
+- [x] 1. **取证探针**（探针先行，ADR-0011 路径）：typelib grep GTOL/Datum 符号族（InsertGTOL/InsertDatumTag/GetGTOL...），实测调用形态（参照 drawing 域既有坑：InsertModelAnnotations3 宿主错误前例、零参属性语义）。
+- [x] 2. **TDD**：fakes 层工具契约测试（框格创建/参数/失败形态）；工具计数锁 79→80+（5 处断言同步 + README + AGENTS 基线，N36 纪律同 commit）。
+- [x] 3. **实现**：drawing 域注册 `drawing_insert_gtol`（+基准符号视取证结果）；单位/语义对齐既有 tolerance 工具。
+- [!] 4. **e2e**（SW 窗口）：SW 未运行窗口——按预置条款记观察项（实机 NewGtol 行为/框格落图判据待 SW 窗口定谳；fakes 全绿+契约取证为收口基础）：建件→出图→插框格→导出 PDF，PDF 含 GTOL 框格字节证据（或如实记录不可验）。
+- [x] 5. 回填本表；全套绿；**BLOCKED 风险如实声明**（GTOL 族若全变体静默 None=AutoBalloon 同族，转观察+数学替代评估）。
 
 **验收**：工具经 MCP 可调且返回结构化结果；离线 fakes 测试绿；e2e 一件过或如实 BLOCKED 定谳。
 **反目标**：不硬凑（静默 None 也标注成功）；不一次做全 GB 框格全集（首版=常用三五种）。

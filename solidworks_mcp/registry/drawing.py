@@ -8,6 +8,7 @@ from solidworks_mcp.solidworks_api.drawing import (
     create_drawing_from_part,
     export_drawing_pdf,
     export_drawing_png,
+    insert_gtol,
     insert_model_dimensions,
     insert_note,
     insert_bom_table,
@@ -139,6 +140,28 @@ def solidworks_drawing_insert_note(
     )
 
 
+def solidworks_drawing_insert_gtol(
+    characteristic: NonEmptyString,
+    tolerance_mm: float,
+    x_mm: float = 100.0,
+    y_mm: float = 50.0,
+    diameter: bool = False,
+    material_condition: str = "none",
+    datum_a: Optional[str] = None,
+    datum_b: Optional[str] = None,
+    datum_c: Optional[str] = None,
+    launch_if_needed: Optional[bool] = None,
+) -> ToolResult:
+    """Insert a GD&T feature-control frame (form/orientation/location/runout/profile) on the active drawing. characteristic is one of flatness/straightness/circularity/cylindricity/parallelism/perpendicularity/angularity/position/concentricity/symmetry/profile_line/profile_surface/circular_runout/total_runout; tolerance_mm is the tolerance zone width in sheet millimetres; diameter adds the Ø modifier; material_condition picks none/mmc/rfs/lmc; datum_a/b/c are reference letters. x_mm/y_mm place the frame on the sheet."""
+    return _call_connected(
+        lambda sw: insert_gtol(
+            sw, characteristic, tolerance_mm, x_mm, y_mm,
+            diameter, material_condition, datum_a, datum_b, datum_c,
+        ),
+        launch_if_needed,
+    )
+
+
 def solidworks_drawing_insert_bom_table(
     view_name: NonEmptyString,
     x_mm: float = 240.0,
@@ -199,6 +222,11 @@ def register(mcp) -> None:
         annotations=STATE_CHANGE,
         structured_output=True,
     )(solidworks_drawing_insert_note)
+    mcp.tool(
+        title="Insert GD&T feature control frame",
+        annotations=STATE_CHANGE,
+        structured_output=True,
+    )(solidworks_drawing_insert_gtol)
     mcp.tool(
         title="Insert BOM table",
         annotations=STATE_CHANGE,

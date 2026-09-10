@@ -1097,3 +1097,111 @@ class TestInsertNote(DrawingTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# N52：形位公差框格（GD&T）——契约（typelib 取证 2026-09-10）：
+# IDrawingDoc.NewGtol() 零参工厂 → IGtol；SetFrameSymbols2（9 参标量）+
+# SetFrameValues2（6 参字符串）+ SetPosition（米）；判据 = GetFrameCount
+# 零参属性；NewGtol 静默 None = AutoBalloon 同族风险，fakes 覆盖诚实失败。
+
+
+class FakeGtol:
+    def __init__(self):
+        self.symbol_calls = []
+        self.value_calls = []
+        self.position = None
+
+    def SetFrameSymbols2(self, *args):
+        self.symbol_calls.append(args)
+        return True
+
+    def SetFrameValues2(self, *args):
+        self.value_calls.append(args)
+        return True
+
+    def SetPosition(self, x, y, z):
+        self.position = (x, y, z)
+        return True
+
+    @property
+    def GetFrameCount(self):
+        return 1
+
+
+class TestInsertGtol(DrawingTestCase):
+    def _doc(self, gtol):
+        doc = FakeDrawingDoc()
+        doc.NewGtol = Mock(return_value=gtol)
+        return doc
+
+    def test_flatness_gtol_success(self):
+        doc = self._doc(FakeGtol())
+        sw, _ = self._sw(doc=doc)
+        result = drawing.insert_gtol(sw, "flatness", 0.05, 120.0, 60.0)
+        self.assertTrue(result["success"], result)
+        gtol = doc.NewGtol.return_value
+        self.assertEqual(gtol.symbol_calls[0][1], 15)  # swGcsFLAT
+        self.assertEqual(gtol.value_calls[0][1], "0.05")  # Tol1 槽
+        self.assertAlmostEqual(gtol.position[0], 0.12)
+        self.assertEqual(result["data"]["frames"], 1)
+
+    def test_position_gtol_with_datums_and_modifiers(self):
+        doc = self._doc(FakeGtol())
+        sw, _ = self._sw(doc=doc)
+        result = drawing.insert_gtol(
+            sw, "position", 0.1, 100.0, 50.0,
+            diameter=True, material_condition="mmc",
+            datum_a="A", datum_b="B",
+        )
+        self.assertTrue(result["success"], result)
+        gtol = doc.NewGtol.return_value
+        self.assertEqual(gtol.symbol_calls[0][1], 23)  # swGcsPOSITION
+        self.assertIs(gtol.symbol_calls[0][2], True)   # TolDia1（直径修饰）
+        self.assertEqual(gtol.symbol_calls[0][3], 1)   # swMcMMC
+        self.assertEqual(gtol.value_calls[0][3], "A")  # Datum1 槽
+        self.assertEqual(gtol.value_calls[0][4], "B")  # Datum2 槽
+
+    def test_invalid_characteristic_rejected(self):
+        sw, _ = self._sw(doc=self._doc(FakeGtol()))
+        result = drawing.insert_gtol(sw, "bogus", 0.05, 0.0, 0.0)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_invalid_material_condition_rejected(self):
+        sw, _ = self._sw(doc=self._doc(FakeGtol()))
+        result = drawing.insert_gtol(
+            sw, "flatness", 0.05, 0.0, 0.0, material_condition="bogus"
+        )
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "INVALID_PARAMETER")
+
+    def test_nonpositive_tolerance_rejected(self):
+        sw, _ = self._sw(doc=self._doc(FakeGtol()))
+        self.assertFalse(drawing.insert_gtol(sw, "flatness", 0.0, 0, 0)["success"])
+        self.assertFalse(drawing.insert_gtol(sw, "flatness", -1.0, 0, 0)["success"])
+
+    def test_new_gtol_none_is_honest_failure(self):
+        sw, _ = self._sw(doc=self._doc(gtol=None))
+        result = drawing.insert_gtol(sw, "flatness", 0.05, 0.0, 0.0)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "SW_API_ERROR")
+
+    def test_zero_frame_count_is_no_effect(self):
+        class EmptyGtol(FakeGtol):
+            @property
+            def GetFrameCount(self):
+                return 0
+
+        sw, _ = self._sw(doc=self._doc(EmptyGtol()))
+        result = drawing.insert_gtol(sw, "flatness", 0.05, 0.0, 0.0)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"]["code"], "SW_NO_EFFECT")
+
+    def test_not_a_drawing_document(self):
+        part_doc = Mock()
+        part_doc.GetType = 1  # swDocPART
+        sw = Mock()
+        sw.get_active_document.return_value = part_doc
+        result = drawing.insert_gtol(sw, "flatness", 0.05, 0.0, 0.0)
+        self.assertFalse(result["success"])

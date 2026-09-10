@@ -107,6 +107,7 @@ from solidworks_mcp.registry.drawing import (  # noqa: F401
     solidworks_drawing_export_png,
     solidworks_drawing_insert_bom_table,
     solidworks_drawing_insert_dimensions,
+    solidworks_drawing_insert_gtol,
     solidworks_drawing_insert_note,
     solidworks_drawing_insert_section_view,
     solidworks_drawing_insert_surface_finish,
