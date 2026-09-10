@@ -40,12 +40,14 @@ venv\Scripts\python.exe tools\smoke_frozen.py        # 验收
 - onedir 首启 0.6s——onefile（解压到临时目录）会更慢且杀软误报率高，**不测**（反目标）。
 - `mcp[cli]` 的 cli extras（typer/rich）未被打进（未被 import 跟随）——体积红利。
 
-## 5. D5 裁决建议（N49 正式落笔）
+## 5. D5 裁决（2026-09-10 落笔，N49）
+
+**裁决：frozen onedir 采纳为分发包主形态**（product-vision §D5 已同步）。
 
 | 形态 | 结论 |
 |---|---|
-| **frozen onedir** | ✅ 推荐：实测全过、构建 16s、47MB、维护面=构建脚本一个 |
-| 源码+bootstrap 脚本 | 备选（开发者形态保留：venv+README 本来就是现状） |
-| 容器 | 否决当前场景：目标用户=Windows+SolidWorks 桌面工位，COM 无容器路径 |
+| **frozen onedir** | ✅ 主形态：实测全过、构建 16s、47MB、维护面=构建脚本一个 |
+| 源码+bootstrap 脚本 | 保留为开发者形态（venv+README 即现状） |
+| 容器 | 否决：目标用户=Windows+SolidWorks 桌面工位，COM 无容器路径 |
 
-下一步（N49）：D5 回填 product-vision、用户文档 v1（含 .mcp.json 指向 frozen exe 的客户端配置样例——比解释器+源码路径更简）、示例库首波。
+后续（安装器 UI / 许可激活）= G9 尾项，按 product-vision 路线另行立项。

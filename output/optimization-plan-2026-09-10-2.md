@@ -25,7 +25,7 @@
 | ID | 优先级 | 标题 | 仓 | 依赖 | 预估 | 状态 | 完成日期 |
 |---|---|---|---|---|---|---|---|
 | N48 | P0 | PyInstaller frozen 打包实测（主仓 MCP server）→ 构建脚本+spec+MCP stdio smoke | 主 | 无 | 1晚 | `[x]` 2026-09-10（**一次成功**：16s 构建/47MB/0.6s 握手/79 工具逐位一致/诚实失败 PASS；pywin32 零配置；ezdxf 观察项对主仓 N/A；报告 docs/packaging-frozen-report.md；D5 建议=frozen onedir 采纳） | 2026-09-10 |
-| N49 | P0 | D5 安装形态裁决 + 用户文档 v1（安装/配置/首跑）+ 示例库首波（20+ 取自 examples/） | 主 | N48 | 1晚 | `[ ]` | |
+| N49 | P0 | D5 安装形态裁决 + 用户文档 v1（安装/配置/首跑）+ 示例库首波（20+ 取自 examples/） | 主 | N48 | 1晚 | `[x]` 2026-09-10（D5=frozen onedir 回填 vision/报告；user-guide v1（10 环境变量从 config.py 源头核验+模板发现链+首跑 4 步清单+排障表）；examples/ 24 卡 5 域目录化（验收数字引 e2e 实证，含 BLOCKED 边界诚实声明）） | 2026-09-10 |
 | N50 | P2 | G8 路由策略固化：[llm.routing] 双 provider 对比评测 + 配置文档 | ai | 无 | 1晚 | `[ ]` | |
 | N51 | P2 | G10 多机部署评估（观察性质，无实施承诺） | — | 无 | 0.5晚 | `[ ]` | |
 
@@ -56,10 +56,10 @@
 
 ## 4. N49 D5 裁决 + 用户文档 v1 + 示例库首波（P0，主仓，1晚，依赖 N48）
 
-- [ ] 1. **D5 裁决**：依 N48 实测数据三选一（frozen onedir / 源码+bootstrap 脚本 / 容器），裁决记录进 product-vision §D5 与 packaging 报告。
-- [ ] 2. **用户文档 v1** `docs/user-guide.md`：安装（两形态）、.mcp.json 客户端配置（修 P0-2 旧路径注记）、环境变量表（ALLOWED_ROOT/AUTO_START/SOLIDWORKS_VERSION 等）、首跑验证清单。
-- [ ] 3. **示例库首波**：examples/ 现有素材盘点整理为 20+ 可跑示例（目录化+INDEX），frozen 用户可经 MCP 客户端直接复用。
-- [ ] 4. 回填本表；文档走 docs/（不动代码）。
+- [x] 1. **D5 裁决**：依 N48 实测数据三选一（frozen onedir / 源码+bootstrap 脚本 / 容器），裁决记录进 product-vision §D5 与 packaging 报告。
+- [x] 2. **用户文档 v1** `docs/user-guide.md`：安装（两形态）、.mcp.json 客户端配置（修 P0-2 旧路径注记）、环境变量表（ALLOWED_ROOT/AUTO_START/SOLIDWORKS_VERSION 等）、首跑验证清单。
+- [x] 3. **示例库首波**：examples/ 现有素材盘点整理为 20+ 可跑示例（目录化+INDEX），frozen 用户可经 MCP 客户端直接复用。
+- [x] 4. 回填本表；文档走 docs/（不动代码）。
 
 ## 5. N50 G8 路由策略固化（P2，aicad，1晚）
 
