@@ -27,7 +27,7 @@
 |---|---|---|---|---|---|---|---|
 | N52 | P1 | G5 GD&T：形位公差框格+基准符号工具（取证→TDD→实现，drawing 域） | 主 | 无 | 1晚 | `[x]` 2026-09-10（契约=IDrawingDoc.NewGtol 零参工厂+SetFrameSymbols2 九参/SetFrameValues2 六参/SetPosition+GetFrameCount 判据；GCS/MC 枚举 PS 反射；**工具 79→80 计数锁 5 处同步+README/AGENTS**；+8 fakes 测（含 NewGtol=None 诚实失败）；全套 565+106 绿；e2e 留观察项=SW 未运行窗口，实机 NewGtol 行为待定谳） | 2026-09-10 |
 | N53 | P0 | G2 第二波：评测集 30→50（编辑型/多实体/参数化/装配变体/异形件域；断言全机械可验） | ai | 无 | 1-2晚 | `[x]` 2026-09-10（**离线 50/50 全绿**旧 30 零回归；6 个 mock/断言错被评测网首跑抓住；test_evals 同步+全套 732 绿；live 抽验 **1/5 如实记录**——4 败全 assert_mismatch（t_stiffener 措辞歧义观察项/csg .cut() 风格不识别=N54 输入/2 解释差异）；执行偏差：图纸域 3 名额改配（无断言键）） | 2026-09-10 |
-| N54 | P2 | G6 CSG 契约 v3：通道 B AST 识别 polygon/extrude + 导出方向 op（双向互证对称化） | 主+ai | 无 | 1晚 | `[ ]` | |
+| N54 | P2 | G6 CSG 契约 v3：通道 B AST 识别 polygon/extrude + 导出方向 op（双向互证对称化） | 主+ai | 无 | 1晚 | `[x]` 2026-09-10（识别面+.cut/.fuse 方法风格+列表/starred 展开+extrude(RegularPolygon,h) 函数式（沙箱真实形态，方法式留防御分支）；polygon_prism 字段与主仓消费端逐字对齐零改动；**离线互证 rel diff 2.33e-16**（六角柱 vs SW 公式，v2 ring 基准同量级）；hex_nut_plate mock 100% 识别；+9 测 741 绿；互证矩阵 docs/csg-v3-interop-matrix.md（诚实边界表：ListComp/未 extrude/非首建均拒绝带因）；SW 实机 roundtrip 留观察项（与 N52 e2e 同窗口）） | 2026-09-10 |
 | N55 | P1 | G4 宏录制器契约转录：五族逐族 .swp 宏→API 契约→BLOCKED 解锁（mirror/pattern/rib/combine/AutoBalloon） | 主 | **U9（用户录宏）** | 1晚/族 | `[ ]` 条件 | |
 | N56 | P0 | G1 冲 95% 终验：50 任务全量连跑 + 残留败收敛裁决（反目标：不为凑分改断言） | ai | N53（新尺子）；N52 并行不阻塞 | 1晚 | `[ ]` | |
 
@@ -73,10 +73,10 @@
 
 **目标**：双引擎互证对称化——v2 只有「SW 特征序列→build123d 重建」，v3 补「build123d 脚本→SW op 序列」方向。
 
-- [ ] 1. **通道 B AST 识别扩展**（aicad 沙箱侧）：现有识别面盘点→补 `RegularPolygon`/`extrude`（v2 延后项）；识别失败的 op 如实归类（不猜）。
-- [ ] 2. **导出方向 op 扩**（主仓 `rebuild_csg` 通道）：与新识别面一一对齐；roundtrip 互证（polygon/extrude 双向逐位对比，参照 v2 的 ring 2.9e-16 标准）。
-- [ ] 3. **互证矩阵报告**：双向覆盖表（哪些 op 双向、哪些单向、哪些不可达）——诚实边界表。
-- [ ] 4. 回填本表；双仓全套绿。
+- [x] 1. **通道 B AST 识别扩展**（aicad 沙箱侧）：现有识别面盘点→补 `RegularPolygon`/`extrude`（v2 延后项）；识别失败的 op 如实归类（不猜）。
+- [x] 2. **导出方向 op 扩**（主仓 `rebuild_csg` 通道）：与新识别面一一对齐；roundtrip 互证（polygon/extrude 双向逐位对比，参照 v2 的 ring 2.9e-16 标准）。
+- [x] 3. **互证矩阵报告**：双向覆盖表（哪些 op 双向、哪些单向、哪些不可达）——诚实边界表。
+- [x] 4. 回填本表；双仓全套绿。
 
 **验收**：至少 polygon_prism 一族双向逐位一致；不可达项有归因不硬凑。
 
