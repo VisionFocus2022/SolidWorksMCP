@@ -22,7 +22,7 @@ import threading
 import time
 from pathlib import Path
 
-EXPECTED_TOOLS = 79  # default registry (product extras disabled) — pinned by tests
+EXPECTED_TOOLS = 80  # default registry (N52 added drawing_insert_gtol) — pinned by tests
 READ_TIMEOUT_S = 30.0
 
 
