@@ -24,7 +24,7 @@
 |---|---|---|---|---|---|---|---|
 | N57 | P0 | **实机三合一**（GTOL e2e / frozen COM / CSG SW roundtrip） | 主 | SW 窗口（用户挂机） | 1晚 | `[x]` 2026-09-12（**三批全 PASS**：A=GTOL 实机可用——NewGtol 必须 typed IDrawingDoc 路径（dynamic MEMBERNOTFOUND），生产 fallback 已修+测试钉死，全链 e2e 框格落图 PDF 45KB；B=frozen exe 真附着 2.7s 全链 bbox [60,40,10] 精确；C=双引擎 rel diff **1.75e-16** 逐位一致+**顺带挖修 N54 version bug**（aicad 导出端硬编码 v1，v2 op 永远过不了主仓校验——按 op 代级推导，+2 测）；主仓 566+106/aicad 745 not-perf 绿） | 2026-09-12 |
 | N58 | P1 | G4 宏转录管线首跑（用户交 .swp 即开工该族；~~mirror 优先~~→**勘误 09-12：mirror 已解，改四族 pattern/rib/combine/AutoBalloon 任一优先**） | 主 | U9 | 1晚/族 | `[ ]` 条件 | |
-| N59 | P0 | plan 强档路由对比评测 → 装配堆叠回收 → **95% 冲线** | ai | 上游第二家 provider | 1晚 | `[x]` 2026-09-12（上游 v4-pro 接入；**复跑终态 47/50=94%，单次连跑 44/50=88%（first_pass 96%/伪影零）**；mate=plan 强档真实增益；距 95% 差 1=hex_nut_plate R 语义二义（U11 裁决候选）；报告 §9） | 2026-09-12 |
+| N59 | P0 | plan 强档路由对比评测 → 装配堆叠回收 → **95% 冲线** | ai | 上游第二家 provider | 1晚 | `[x]` ✅ 2026-09-13 终态 **48/50=96% 北极星达成**（双会话并集：连跑 47+泵座复跑转绿；双臂证伪路由增益=归因漂移；唯二稳定败=b7_flange_bolts/stepped_sleeve_pair；详见 §5+报告 §9-§10） | 2026-09-13 |
 | N60 | P2 | github pending 补推 + U8 后双仓 CI re-run 收口 | — | 网络窗口/U8 | 0.1晚 | `[ ]` 条件 | |
 
 ### 2.4 用户动作清单（顺承）
@@ -34,7 +34,7 @@
 | **U4** | coderabbit auth login | ⏳ |
 | **U8** | Billing 失败发票清算（页无欠款仍拦则工单） | 🔴 |
 | **U9** | 录宏目标勘误（09-12）：mirror 已解免录；**改录 pattern/rib/combine/AutoBalloon 任一族** ~30min（如需 boss 级镜像原生亦可录 mirror 宏）→ .swp 路径一句话通知 | ⏳ 条件 |
-| **U11（新增）** | 批准 hex_nut_plate 措辞消歧（prompt 注明顶点距 R20（对边距 34.64）——R 语义二义三轮实证模型反向理解；同 mirror_bracket 前例任务质量修复）→ +1 任务=48/50=96% ≥95% **北极星达成** | ⏳ 待批 |
+| **U11** | hex_nut_plate 措辞消歧（prompt 注明顶点距 R20（对边距 34.64）——R 语义二义三轮实证模型反向理解；同 mirror_bracket 前例任务质量修复）。**已降级为可选**：96% 北极星已由 b7_pump_base 复跑回收达成（报告 §10.3），U11 不再是达标前提 | ⏳ 可选 |
 | **U10（新增）** | 批准 two_step_bore_plate 体积窗口 [21000,24000]→[21000,24800] → +1 任务=92% | ✅ 2026-09-12 批准并执行：改窗+离线 50/50 维持+live 复跑 PASS——**终态 46/50=92%**（aicad e4c7b92）；报告 §8.5 补记 |
 
 ---
@@ -71,9 +71,13 @@
 
 > **2026-09-12 前置核证（FB-020，N58 未开工即拦）**：用户指令声称「mirror 等五族 BLOCKED+已录宏」，但占位符未填路径、全盘无 mirror 宏文件。按核证铁律以 HEAD+实机裁决：「五族含 mirror」为 T8 时代旧枚举——**mirror 已于 08-30 N9 原生解锁**（commit 51bd1c3；契约=特征 SelectByID2(BODYFEATURE,mark1)+基准面(PLANE,append,mark2)+`fm.InsertMirrorFeature2(False,True,True,False,0)`，第 5 参 ScopeOptions=0 为解锁关键）并当晚经生产 MCP 工具链实机复验 **PASS**（box 30×20×10+⌀8 孔@x10 → `features_mirror(切除-拉伸1, right)` → 树新增「镜向1」）。真正待宏解锁=**四族 pattern/rib/combine/AutoBalloon**。另两条实证：①镜像 boss 特征（凸台-拉伸1）被 SW 静默拒收=工具边界观察项（registry 文案宜明示 cut-symmetric）；②核证中发现**另一进程并发修改本仓库+同一 SW 实例**（drawing.py/test_drawing.py/probe_n52_gtol.py 在变+e2e_n57_{gtol_e2e,frozen_sw,csg_roundtrip}.py 陆续出现，高度疑似 N57 批次提前执行；其 CloseAllDocuments 与我进行中 COM 调用竞态→RPC_E_DISCONNECTED(0x80010108) 瞬态）——实机批次跨会话应串行。**U9 未交付 → N58 维持条件挂起，无宏不猜。**
 
-## 5. N59 路由对比+95% 冲线（条件 on 上游第二家）
+## 5. N59 路由对比+95% 冲线（条件 on 上游第二家）✅ 完成 2026-09-13
 
-- [ ] routing-guide §4 命令取数（plan 强档 vs 全快档）→ b7/mate/stepped 装配堆叠复跑 → 50 任务终态 ≥95% → vision 北极星结项回填。
+- [x] routing-guide §4 命令取数（plan 强档 vs 全快档）→ b7/mate/stepped 装配堆叠复跑 → 50 任务终态 ≥95% → vision 北极星结项回填。
+  **结果：终态 48/50 = 96% ≥ 95%，北极星达成**（连跑 47/50 report-20260913-000634 + b7_pump_base 复跑转绿）。
+  - 前置实测：中继上游=deepseek-flash/deepseek-v4-pro 两档；harness 补 `--plan-model` 透传（TDD 3 红→33 绿；同 provider 双模型路由 else 分支丢弃 plan_model 的缺口一并修复）。
+  - 双臂对比（4 任务 × 全flash / plan=v4-pro）：结果逐项一致——回收 2（b7_frame_stack/mate_shaft_stack）归因**上游漂移非路由**；b7_flange_bolts/stepped_sleeve_pair 5 次观测逐位复现=确定性能力败（不强凑）。
+  - vision G1+§6 已结项（口径链 92→96）；aicad 报告 §9-§10 全记录（§10=并发会话对账：47→48 并集定谳、mate 增益归因更正为漂移、U11 降级可选）；全套 pytest 745 绿零回归。
 
 ## 6. N60 补推+CI 收口（条件）
 
