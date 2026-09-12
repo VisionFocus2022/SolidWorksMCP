@@ -24,7 +24,7 @@
 |---|---|---|---|---|---|---|---|
 | N57 | P0 | **实机三合一**（GTOL e2e / frozen COM / CSG SW roundtrip） | 主 | SW 窗口（用户挂机） | 1晚 | `[x]` 2026-09-12（**三批全 PASS**：A=GTOL 实机可用——NewGtol 必须 typed IDrawingDoc 路径（dynamic MEMBERNOTFOUND），生产 fallback 已修+测试钉死，全链 e2e 框格落图 PDF 45KB；B=frozen exe 真附着 2.7s 全链 bbox [60,40,10] 精确；C=双引擎 rel diff **1.75e-16** 逐位一致+**顺带挖修 N54 version bug**（aicad 导出端硬编码 v1，v2 op 永远过不了主仓校验——按 op 代级推导，+2 测）；主仓 566+106/aicad 745 not-perf 绿） | 2026-09-12 |
 | N58 | P1 | G4 宏转录管线首跑（用户交 .swp 即开工该族；~~mirror 优先~~→**勘误 09-12：mirror 已解，改四族 pattern/rib/combine/AutoBalloon 任一优先**） | 主 | U9 | 1晚/族 | `[ ]` 条件 | |
-| N59 | P0 | plan 强档路由对比评测 → 装配堆叠回收 → **95% 冲线** | ai | 上游第二家 provider | 1晚 | `[ ]` 条件 | |
+| N59 | P0 | plan 强档路由对比评测 → 装配堆叠回收 → **95% 冲线** | ai | 上游第二家 provider | 1晚 | `[x]` 2026-09-12（上游 v4-pro 接入；**复跑终态 47/50=94%，单次连跑 44/50=88%（first_pass 96%/伪影零）**；mate=plan 强档真实增益；距 95% 差 1=hex_nut_plate R 语义二义（U11 裁决候选）；报告 §9） | 2026-09-12 |
 | N60 | P2 | github pending 补推 + U8 后双仓 CI re-run 收口 | — | 网络窗口/U8 | 0.1晚 | `[ ]` 条件 | |
 
 ### 2.4 用户动作清单（顺承）
@@ -34,6 +34,7 @@
 | **U4** | coderabbit auth login | ⏳ |
 | **U8** | Billing 失败发票清算（页无欠款仍拦则工单） | 🔴 |
 | **U9** | 录宏目标勘误（09-12）：mirror 已解免录；**改录 pattern/rib/combine/AutoBalloon 任一族** ~30min（如需 boss 级镜像原生亦可录 mirror 宏）→ .swp 路径一句话通知 | ⏳ 条件 |
+| **U11（新增）** | 批准 hex_nut_plate 措辞消歧（prompt 注明顶点距 R20（对边距 34.64）——R 语义二义三轮实证模型反向理解；同 mirror_bracket 前例任务质量修复）→ +1 任务=48/50=96% ≥95% **北极星达成** | ⏳ 待批 |
 | **U10（新增）** | 批准 two_step_bore_plate 体积窗口 [21000,24000]→[21000,24800] → +1 任务=92% | ✅ 2026-09-12 批准并执行：改窗+离线 50/50 维持+live 复跑 PASS——**终态 46/50=92%**（aicad e4c7b92）；报告 §8.5 补记 |
 
 ---
