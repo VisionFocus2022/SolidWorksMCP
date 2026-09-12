@@ -15,7 +15,7 @@
 | 待清观察项 | ①N52 GTOL 实机 e2e（NewGtol 定谳）②N48/49 frozen COM 实机 ③N54 CSG SW roundtrip | N57 一晚清（互独立） |
 | 装配堆叠败 | b7 系列+mate_shaft_stack+stepped_sleeve_pair=plan 强档域 | N59（等上游第二家） |
 | two_step_bore_plate | 稳定 24504 超窗 2.1%（窗口边际） | **U10 批准即 +1（92%）** |
-| 五族 BLOCKED | 宏=唯一解锁路径 | N58（等 U9） |
+| 四族 BLOCKED | **勘误 2026-09-12**：mirror 已 N9 原生解锁（51bd1c3）+当晚实机复验 PASS（切特征×右视基准面→「镜向1」）；真正待宏=pattern/rib/combine/AutoBalloon | N58（等 U9） |
 | github pending | aicad 061402c/53d8917+主仓 3d1d09a（网络窗口） | 窗口恢复即补推 |
 
 ## 2. 任务进度总览
@@ -23,7 +23,7 @@
 | ID | 优先级 | 标题 | 仓 | 依赖 | 预估 | 状态 | 完成日期 |
 |---|---|---|---|---|---|---|---|
 | N57 | P0 | **实机三合一**（GTOL e2e / frozen COM / CSG SW roundtrip）——今晚 00:05 定时启动，SW 挂机窗口 | 主 | SW 窗口（用户挂机） | 1晚 | `[ ]` 已预置资产 | |
-| N58 | P1 | G4 宏转录管线首跑（用户交 .swp 即开工该族；mirror 优先） | 主 | U9 | 1晚/族 | `[ ]` 条件 | |
+| N58 | P1 | G4 宏转录管线首跑（用户交 .swp 即开工该族；~~mirror 优先~~→**勘误 09-12：mirror 已解，改四族 pattern/rib/combine/AutoBalloon 任一优先**） | 主 | U9 | 1晚/族 | `[ ]` 条件 | |
 | N59 | P0 | plan 强档路由对比评测 → 装配堆叠回收 → **95% 冲线** | ai | 上游第二家 provider | 1晚 | `[ ]` 条件 | |
 | N60 | P2 | github pending 补推 + U8 后双仓 CI re-run 收口 | — | 网络窗口/U8 | 0.1晚 | `[ ]` 条件 | |
 
@@ -33,7 +33,7 @@
 |---|---|---|
 | **U4** | coderabbit auth login | ⏳ |
 | **U8** | Billing 失败发票清算（页无欠款仍拦则工单） | 🔴 |
-| **U9** | 录 mirror 族宏（~30min）→ 一句话通知 | ⏳ 条件 |
+| **U9** | 录宏目标勘误（09-12）：mirror 已解免录；**改录 pattern/rib/combine/AutoBalloon 任一族** ~30min（如需 boss 级镜像原生亦可录 mirror 宏）→ .swp 路径一句话通知 | ⏳ 条件 |
 | **U10（新增）** | 批准 two_step_bore_plate 体积窗口 [21000,24000]→[21000,24800] → +1 任务=92% | ✅ 2026-09-12 批准并执行：改窗+离线 50/50 维持+live 复跑 PASS——**终态 46/50=92%**（aicad e4c7b92）；报告 §8.5 补记 |
 
 ---
@@ -67,6 +67,8 @@
 ## 4. N58 宏转录管线（条件 on U9，1晚/族）
 
 - [ ] .swp 宏解析器（VBA 提取 API 调用序列→typelib 对照契约卡）→ 探针复现 → TDD → 工具+计数锁+示例卡+BLOCKED 撤销。无宏不猜。
+
+> **2026-09-12 前置核证（FB-020，N58 未开工即拦）**：用户指令声称「mirror 等五族 BLOCKED+已录宏」，但占位符未填路径、全盘无 mirror 宏文件。按核证铁律以 HEAD+实机裁决：「五族含 mirror」为 T8 时代旧枚举——**mirror 已于 08-30 N9 原生解锁**（commit 51bd1c3；契约=特征 SelectByID2(BODYFEATURE,mark1)+基准面(PLANE,append,mark2)+`fm.InsertMirrorFeature2(False,True,True,False,0)`，第 5 参 ScopeOptions=0 为解锁关键）并当晚经生产 MCP 工具链实机复验 **PASS**（box 30×20×10+⌀8 孔@x10 → `features_mirror(切除-拉伸1, right)` → 树新增「镜向1」）。真正待宏解锁=**四族 pattern/rib/combine/AutoBalloon**。另两条实证：①镜像 boss 特征（凸台-拉伸1）被 SW 静默拒收=工具边界观察项（registry 文案宜明示 cut-symmetric）；②核证中发现**另一进程并发修改本仓库+同一 SW 实例**（drawing.py/test_drawing.py/probe_n52_gtol.py 在变+e2e_n57_{gtol_e2e,frozen_sw,csg_roundtrip}.py 陆续出现，高度疑似 N57 批次提前执行；其 CloseAllDocuments 与我进行中 COM 调用竞态→RPC_E_DISCONNECTED(0x80010108) 瞬态）——实机批次跨会话应串行。**U9 未交付 → N58 维持条件挂起，无宏不猜。**
 
 ## 5. N59 路由对比+95% 冲线（条件 on 上游第二家）
 
