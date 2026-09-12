@@ -1205,3 +1205,32 @@ class TestInsertGtol(DrawingTestCase):
         sw.get_active_document.return_value = part_doc
         result = drawing.insert_gtol(sw, "flatness", 0.05, 0.0, 0.0)
         self.assertFalse(result["success"])
+
+    def test_new_gtol_dynamic_failure_falls_back_to_typed(self):
+        """N57 批次 A 实机契约：dynamic dispatch 上 NewGtol 报
+        DISP_E_MEMBERNOTFOUND（成员面受限）——生产工具必须走 typed
+        IDrawingDoc 兜底，fakes 用 monkeypatch gencache 钉住该路径。"""
+        import pywintypes
+
+        class FakeTypedDrawing:
+            def NewGtol(self):
+                return FakeGtol()
+
+        class FakeGenModule:
+            @staticmethod
+            def IDrawingDoc(oleobj):
+                return FakeTypedDrawing()
+
+        doc = FakeDrawingDoc()
+        doc.NewGtol = Mock(side_effect=pywintypes.com_error(
+            (-2147352573, "找不到成员。", None, None)
+        ))
+        doc._oleobj_ = object()
+        sw, _ = self._sw(doc=doc)
+        with patch(
+            "win32com.client.gencache.GetModuleForProgID",
+            return_value=FakeGenModule,
+        ):
+            result = drawing.insert_gtol(sw, "flatness", 0.05, 0.0, 0.0)
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["data"]["frames"], 1)

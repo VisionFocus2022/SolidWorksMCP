@@ -1128,7 +1128,17 @@ def insert_gtol(
         if call_or_value(model, "GetType") != swDocDRAWING:
             return error_response("Active document is not a drawing")
 
-        gtol = model.NewGtol()
+        try:
+            gtol = model.NewGtol()
+        except Exception:  # noqa: BLE001 —— N57 批次 A 实证：NewDocument 返回的
+            # dynamic dispatch 上 NewGtol 报 DISP_E_MEMBERNOTFOUND（成员面受限，
+            # quirks#26③ 同族）——必须转 typed IDrawingDoc（gencache 缓存模块）。
+            from win32com.client import gencache
+
+            typed_doc = gencache.GetModuleForProgID(
+                "SldWorks.Application"
+            ).IDrawingDoc(model._oleobj_)
+            gtol = typed_doc.NewGtol()
         if gtol is None:
             return error_response(
                 "SolidWorks rejected the feature-control frame (NewGtol "

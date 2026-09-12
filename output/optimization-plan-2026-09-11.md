@@ -22,7 +22,7 @@
 
 | ID | 优先级 | 标题 | 仓 | 依赖 | 预估 | 状态 | 完成日期 |
 |---|---|---|---|---|---|---|---|
-| N57 | P0 | **实机三合一**（GTOL e2e / frozen COM / CSG SW roundtrip）——今晚 00:05 定时启动，SW 挂机窗口 | 主 | SW 窗口（用户挂机） | 1晚 | `[ ]` 已预置资产 | |
+| N57 | P0 | **实机三合一**（GTOL e2e / frozen COM / CSG SW roundtrip） | 主 | SW 窗口（用户挂机） | 1晚 | `[x]` 2026-09-12（**三批全 PASS**：A=GTOL 实机可用——NewGtol 必须 typed IDrawingDoc 路径（dynamic MEMBERNOTFOUND），生产 fallback 已修+测试钉死，全链 e2e 框格落图 PDF 45KB；B=frozen exe 真附着 2.7s 全链 bbox [60,40,10] 精确；C=双引擎 rel diff **1.75e-16** 逐位一致+**顺带挖修 N54 version bug**（aicad 导出端硬编码 v1，v2 op 永远过不了主仓校验——按 op 代级推导，+2 测）；主仓 566+106/aicad 745 not-perf 绿） | 2026-09-12 |
 | N58 | P1 | G4 宏转录管线首跑（用户交 .swp 即开工该族；~~mirror 优先~~→**勘误 09-12：mirror 已解，改四族 pattern/rib/combine/AutoBalloon 任一优先**） | 主 | U9 | 1晚/族 | `[ ]` 条件 | |
 | N59 | P0 | plan 强档路由对比评测 → 装配堆叠回收 → **95% 冲线** | ai | 上游第二家 provider | 1晚 | `[ ]` 条件 | |
 | N60 | P2 | github pending 补推 + U8 后双仓 CI re-run 收口 | — | 网络窗口/U8 | 0.1晚 | `[ ]` 条件 | |
@@ -45,21 +45,21 @@
 
 ### 批次 A：GTOL 实机 e2e（N52 观察项）
 
-- [ ] A1 **探针** `tools/probe_n52_gtol.py`（已预置）：建图纸→`NewGtol()` 返回值观测（**None=AutoBalloon 同族 BLOCKED 定谳**）→ SetFrameSymbols2(flatness)/SetFrameValues2/SetPosition → GetFrameCount 判据 → 清理。
-- [ ] A2 A1 通过→MCP 工具链 e2e：connect→part_new+create_box→drawing_create_from_part→`drawing_insert_gtol`(flatness 0.05)→export_pdf；判据=GetFrameCount==1+PDF %PDF 头+体积正常。A1 BLOCKED→如实定谳（工具降级观察+数学替代评估，不硬凑）。
+- [x] A1 **探针** `tools/probe_n52_gtol.py`（已预置）：建图纸→`NewGtol()` 返回值观测（**None=AutoBalloon 同族 BLOCKED 定谳**）→ SetFrameSymbols2(flatness)/SetFrameValues2/SetPosition → GetFrameCount 判据 → 清理。
+- [x] A2 A1 通过→MCP 工具链 e2e：connect→part_new+create_box→drawing_create_from_part→`drawing_insert_gtol`(flatness 0.05)→export_pdf；判据=GetFrameCount==1+PDF %PDF 头+体积正常。A1 BLOCKED→如实定谳（工具降级观察+数学替代评估，不硬凑）。
 
 ### 批次 B：frozen COM 实机（N48/N49 观察项）
 
-- [ ] B1 **预置批（白天已完成）**：frozen 重建（N52 后代码→80 工具）+ smoke_frozen EXPECTED_TOOLS 79→80 同步（N52 遗漏联动补）+ smoke PASS。
-- [ ] B2 实机：MCP stdio 起 frozen exe→`solidworks_connect`（真附着）→part_new→create_box→get_bounding_box（实机值 [60,40,10] 断言）→关闭。判据=frozen 下 COM 附着+gen_py typed 缓存首生成路径工作。
+- [x] B1 **预置批（白天已完成）**：frozen 重建（N52 后代码→80 工具）+ smoke_frozen EXPECTED_TOOLS 79→80 同步（N52 遗漏联动补）+ smoke PASS。
+- [x] B2 实机：MCP stdio 起 frozen exe→`solidworks_connect`（真附着）→part_new→create_box→get_bounding_box（实机值 [60,40,10] 断言）→关闭。判据=frozen 下 COM 附着+gen_py typed 缓存首生成路径工作。
 
 ### 批次 C：CSG SW roundtrip（N54 观察项）
 
-- [ ] C1 build123d 六角柱（R20 h10 理论 2598.08）→ `csg_plan_from_script`（离线已验 2.33e-16）→ 主仓 `rebuild_csg` SW 实机重建 → 体积互证（窗口 ±1%）→ 清理。判据=导出方向在 SW 实机闭环。
+- [x] C1 build123d 六角柱（R20 h10 理论 2598.08）→ `csg_plan_from_script`（离线已验 2.33e-16）→ 主仓 `rebuild_csg` SW 实机重建 → 体积互证（窗口 ±1%）→ 清理。判据=导出方向在 SW 实机闭环。
 
 ### 收尾
 
-- [ ] 三项各自定谳（tools/INDEX 取证行+本表回填+必要时修复走 TDD）；全套回归；提交推送。
+- [x] 三项各自定谳（tools/INDEX 取证行+本表回填+必要时修复走 TDD）；全套回归；提交推送。
 
 **验收**：3 观察项各有定谳（通过/如实 BLOCKED）；无静默失败；全套绿。
 **反目标**：不为过 e2e 硬凑判据；SW 异常状态不强行续跑（如实报告暂停）。

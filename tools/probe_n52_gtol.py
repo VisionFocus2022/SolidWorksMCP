@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT))
 
 import pythoncom  # noqa: E402
 from win32com.client import Dispatch  # noqa: E402
+from solidworks_mcp.utils.com import call_or_value  # noqa: E402
 
 # typelib 取证（N52）：GCS flatness=15；MC none=0
 GCS_FLATNESS = 15
@@ -46,7 +47,7 @@ def main() -> int:
 
     sw = Dispatch("SldWorks.Application")
     sw.Visible = True
-    app_major = sw.RevisionNumber()
+    app_major = call_or_value(sw, "RevisionNumber")
     print(f"connected: SW {app_major}", flush=True)
 
     from solidworks_mcp.utils.templates import get_drawing_template
@@ -56,11 +57,20 @@ def main() -> int:
         return 1
 
     doc = sw.NewDocument(template, 0, 0.0, 0.0)
-    if not verdict("NewDocument(drawing)", doc is not None, str(getattr(doc, "GetTitle", "?"))):
+    if not verdict("NewDocument(drawing)", doc is not None, str(call_or_value(doc, "GetTitle"))):
         return 1
 
     try:
-        gtol = doc.NewGtol()
+        try:
+            gtol = doc.NewGtol()
+        except Exception as dyn_exc:  # noqa: BLE001 —— quirks#26③：NewDocument 返回的
+            # dynamic dispatch 成员面受限（DISP_E_MEMBERNOTFOUND）——转 typed IDrawingDoc
+            from win32com.client import gencache
+
+            print(f'dynamic NewGtol failed ({dyn_exc}); retrying via typed IDrawingDoc', flush=True)
+            mod = gencache.GetModuleForProgID('SldWorks.Application')
+            typed_doc = mod.IDrawingDoc(doc._oleobj_)
+            gtol = typed_doc.NewGtol()
         if not verdict(
             "NewGtol()", gtol is not None,
             "returned object" if gtol is not None else "SILENT NONE — AutoBalloon-family BLOCKED",
